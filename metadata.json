@@ -1,0 +1,6 @@
+{
+  "name": "Freebook",
+  "description": "A highly responsive and interactive full-stack social network replicating Facebook core features.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

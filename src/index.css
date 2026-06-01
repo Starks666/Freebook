@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+.dark {
+  /* Pitch-Black theme variables for gray, slate, and zinc scales */
+  --color-gray-950: #000000 !important;
+  --color-gray-900: #08080a !important;
+  --color-gray-855: #000000 !important;
+  --color-gray-850: #0d0d0f !important;
+  --color-gray-808: #eceff4 !important;
+  --color-gray-805: #131317 !important;
+  --color-gray-800: #131317 !important;
+  --color-gray-750: #1a1a1f !important;
+  --color-gray-700: #222228 !important;
+  --color-gray-655: #abb2bf !important;
+  --color-gray-650: #8a8d93 !important;
+  --color-gray-600: #2d2d34 !important;
+  --color-gray-550: #4e5158 !important;
+  --color-gray-505: #8c92a0 !important;
+  --color-gray-500: #8c92a0 !important;
+  --color-gray-450: #656b76 !important;
+  --color-gray-409: #4d515a !important;
+  --color-gray-400: #9499a6 !important;
+  --color-gray-300: #d1d5db !important;
+  --color-gray-250: #1c1c22 !important;
+  --color-gray-200: #1c1c22 !important;
+  --color-gray-150: #1c1c22 !important;
+  --color-gray-105: #111115 !important;
+  --color-gray-100: #09090c !important;
+  --color-gray-50: #050508 !important;
+
+  --color-slate-950: #000000 !important;
+  --color-slate-900: #08080a !important;
+  --color-slate-850: #0c0c0e !important;
+  --color-slate-800: #131317 !important;
+  --color-slate-700: #222228 !important;
+  --color-slate-600: #2d2d34 !important;
+  --color-slate-350: #131317 !important;
+  --color-slate-100: #09090c !important;
+  --color-slate-50: #050508 !important;
+
+  --color-zinc-950: #000000 !important;
+  --color-zinc-900: #08080a !important;
+  --color-zinc-850: #0c0c0e !important;
+  --color-zinc-800: #131317 !important;
+  --color-zinc-700: #222228 !important;
+
+  --color-blue-950: #02040b !important;
+  --color-blue-105: #070c18 !important;
+
+  background-color: #000000 !important;
+  color: #f3f4f6 !important;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  animation: marquee 10s linear infinite;
+  white-space: nowrap;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
