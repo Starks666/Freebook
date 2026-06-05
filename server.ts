@@ -6,8 +6,9 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import { WebSocketServer, WebSocket } from 'ws';
 import { db, hashPassword } from './src/server/db';
-import { User, DBUser, Post, Comment, Friendship } from './src/types';
+import { User, DBUser, Post, Comment, CommentReply, Friendship, Message, AppNotification } from './src/types';
 
 async function startServer() {
   const app = express();
@@ -142,6 +143,179 @@ async function startServer() {
     res.json(safeUsers);
   });
 
+  // Update active status mode manually
+  app.put('/api/users/status', authenticateUser, (req, res) => {
+    const user = res.locals.user as DBUser;
+    const { statusMode } = req.body;
+
+    if (statusMode === 'active' || statusMode === 'offline' || statusMode === 'dnd') {
+      user.statusMode = statusMode;
+      db.saveUser(user);
+      
+      // Notify connected websockets if function exists
+      if (typeof (app as any).broadcastStatusUpdate === 'function') {
+        (app as any).broadcastStatusUpdate(user.id, statusMode);
+      }
+      
+      const { passwordHash, ...safeUser } = user;
+      return res.json({ user: safeUser });
+    }
+    res.status(400).json({ error: 'Invalid statusMode. Must be active, offline, or dnd.' });
+  });
+
+  // Get conversation messages between the authenticated user and a specific target user
+  app.get('/api/messages/:targetUserId', authenticateUser, (req, res) => {
+    const currentUserId = res.locals.userId;
+    const targetUserId = req.params.targetUserId;
+
+    const messages = db.getMessages().filter(m => 
+      (m.senderId === currentUserId && m.receiverId === targetUserId) ||
+      (m.senderId === targetUserId && m.receiverId === currentUserId)
+    ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    res.json(messages);
+  });
+
+  // Highlight all messages involving the current user
+  app.get('/api/messages', authenticateUser, (req, res) => {
+    const currentUserId = res.locals.userId;
+    const messages = db.getMessages().filter(m => 
+      m.senderId === currentUserId || m.receiverId === currentUserId
+    );
+    res.json(messages);
+  });
+
+  // Send a message via HTTP
+  app.post('/api/messages', authenticateUser, (req, res) => {
+    const currentUserId = res.locals.userId;
+    const { 
+      receiverId, 
+      content, 
+      voiceUrl, 
+      voiceDuration, 
+      isCallEvent, 
+      callType, 
+      callStatus, 
+      callDuration 
+    } = req.body;
+
+    if (!receiverId) {
+      return res.status(400).json({ error: 'Receiver ID is required.' });
+    }
+
+    if (!content && !voiceUrl && !isCallEvent) {
+      return res.status(400).json({ error: 'Content, voice representation, or call events are required.' });
+    }
+
+    const newMessage: Message = {
+      id: `msg_${Date.now()}`,
+      senderId: currentUserId,
+      receiverId,
+      content: content ? content.trim() : (voiceUrl ? '🎤 Voice Message' : (isCallEvent ? '📞 Call Log' : '')),
+      createdAt: new Date().toISOString(),
+      ...(voiceUrl && { voiceUrl, voiceDuration }),
+      ...(isCallEvent && { isCallEvent, callType, callStatus, callDuration })
+    };
+
+    db.saveMessage(newMessage);
+
+    // Notify receiver if connected via websocket
+    if (typeof (app as any).sendMsgRealtime === 'function') {
+      (app as any).sendMsgRealtime(newMessage);
+    }
+
+    res.status(201).json(newMessage);
+  });
+
+
+  // ------------------- NOTIFICATION ACTIONS -------------------
+
+  // Helper to trigger and persist notification, broadcasting it in real-time
+  const triggerNotification = (recipientId: string, sender: DBUser, type: 'like' | 'reaction' | 'comment' | 'share', post: Post, extra?: { reactionType?: string; commentContent?: string }) => {
+    if (recipientId === sender.id) return; // Ignore self-triggering notifications
+
+    // De-duplicate unread notification of same type by same sender on same post
+    const existing = db.getNotifications().find(n => 
+      n.userId === recipientId && 
+      n.senderId === sender.id && 
+      n.postId === post.id && 
+      n.type === type && 
+      !n.isRead
+    );
+
+    if (existing) {
+      existing.createdAt = new Date().toISOString();
+      if (extra?.reactionType) existing.reactionType = extra.reactionType;
+      if (extra?.commentContent) existing.commentContent = extra.commentContent;
+      // Re-save/push
+      db.saveNotification(existing);
+      if (typeof (app as any).sendNotificationRealtime === 'function') {
+        (app as any).sendNotificationRealtime(recipientId, existing);
+      }
+      return;
+    }
+
+    const newNotification: AppNotification = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      userId: recipientId,
+      senderId: sender.id,
+      senderName: sender.displayName,
+      senderAvatar: sender.avatarUrl,
+      type,
+      postId: post.id,
+      postContentExcerpt: post.content ? (post.content.length > 60 ? post.content.substring(0, 60) + '...' : post.content) : '',
+      reactionType: extra?.reactionType,
+      commentContent: extra?.commentContent,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    };
+
+    db.saveNotification(newNotification);
+
+    if (typeof (app as any).sendNotificationRealtime === 'function') {
+      (app as any).sendNotificationRealtime(recipientId, newNotification);
+    }
+  };
+
+  // Get all notifications for authenticated user
+  app.get('/api/notifications', authenticateUser, (req, res) => {
+    const currentUserId = res.locals.userId;
+    const notifications = db.getNotifications()
+      .filter(n => n.userId === currentUserId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    res.json(notifications);
+  });
+
+  // Mark specic notification or all notifications as read
+  app.post('/api/notifications/read', authenticateUser, (req, res) => {
+    const currentUserId = res.locals.userId;
+    const { id } = req.body;
+
+    if (id) {
+      db.markNotificationAsRead(id);
+    } else {
+      db.markAllNotificationsAsRead(currentUserId);
+    }
+
+    res.json({ success: true });
+  });
+
+  // Add share post trigger + notification
+  app.post('/api/posts/:id/share', authenticateUser, (req, res) => {
+    const postId = req.params.id;
+    const user = res.locals.user as DBUser;
+
+    const post = db.getPosts().find(p => p.id === postId);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    // Trigger notification to post author about sharing
+    triggerNotification(post.userId, user, 'share', post);
+
+    res.json({ success: true });
+  });
+
 
   // ------------------- POST ROUTES -------------------
 
@@ -197,6 +371,34 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Edit/Update a post (only allowed for post owner)
+  app.put('/api/posts/:id', authenticateUser, (req, res) => {
+    const postId = req.params.id;
+    const currentUserId = res.locals.userId;
+    const { content, imageUrl } = req.body;
+
+    const post = db.getPosts().find(p => p.id === postId);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    if (post.userId !== currentUserId) {
+      return res.status(403).json({ error: 'You are not authorized to edit this post.' });
+    }
+
+    if (!content && !imageUrl) {
+      return res.status(400).json({ error: 'Post must contain text or an image URL.' });
+    }
+
+    post.content = content || '';
+    if (imageUrl !== undefined) {
+      post.imageUrl = imageUrl || undefined;
+    }
+
+    db.savePost(post);
+    res.json(post);
+  });
+
   // Toggle liking a post (legacy but kept in sync)
   app.post('/api/posts/:id/like', authenticateUser, (req, res) => {
     const postId = req.params.id;
@@ -220,6 +422,10 @@ async function startServer() {
       // Like
       post.likes.push(currentUserId);
       post.reactions[currentUserId] = 'like';
+      
+      // Trigger notification
+      const user = res.locals.user as DBUser;
+      triggerNotification(post.userId, user, 'like', post, { reactionType: 'like' });
     }
 
     db.savePost(post);
@@ -262,6 +468,10 @@ async function startServer() {
       if (!post.likes.includes(currentUserId)) {
         post.likes.push(currentUserId);
       }
+
+      // Trigger notification
+      const user = res.locals.user as DBUser;
+      triggerNotification(post.userId, user, 'reaction', post, { reactionType: type });
     }
 
     db.savePost(post);
@@ -293,6 +503,118 @@ async function startServer() {
     };
 
     post.comments.push(newComment);
+    db.savePost(post);
+
+    // Trigger notification
+    triggerNotification(post.userId, user, 'comment', post, { commentContent: newComment.content });
+
+    res.json(post);
+  });
+
+  // Toggle like on a comment
+  app.post('/api/posts/:postId/comments/:commentId/toggle-like', authenticateUser, (req, res) => {
+    const { postId, commentId } = req.params;
+    const currentUserId = res.locals.userId;
+
+    const post = db.getPosts().find(p => p.id === postId);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    const comment = post.comments.find(c => c.id === commentId);
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found.' });
+    }
+
+    if (!comment.likes) {
+      comment.likes = [];
+    }
+
+    const idx = comment.likes.indexOf(currentUserId);
+    if (idx >= 0) {
+      comment.likes.splice(idx, 1);
+    } else {
+      comment.likes.push(currentUserId);
+    }
+
+    db.savePost(post);
+    res.json(post);
+  });
+
+  // Reply to a comment
+  app.post('/api/posts/:postId/comments/:commentId/reply', authenticateUser, (req, res) => {
+    const { postId, commentId } = req.params;
+    const user = res.locals.user as DBUser;
+    const { content } = req.body;
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Reply content is required.' });
+    }
+
+    const post = db.getPosts().find(p => p.id === postId);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    const comment = post.comments.find(c => c.id === commentId);
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found.' });
+    }
+
+    if (!comment.replies) {
+      comment.replies = [];
+    }
+
+    const newReply: CommentReply = {
+      id: `reply_${Date.now()}`,
+      userId: user.id,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+      content: content.trim(),
+      createdAt: new Date().toISOString(),
+      likes: []
+    };
+
+    comment.replies.push(newReply);
+    db.savePost(post);
+    res.json(post);
+  });
+
+  // Toggle like on a comment reply
+  app.post('/api/posts/:postId/comments/:commentId/replies/:replyId/toggle-like', authenticateUser, (req, res) => {
+    const { postId, commentId, replyId } = req.params;
+    const currentUserId = res.locals.userId;
+
+    const post = db.getPosts().find(p => p.id === postId);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    const comment = post.comments.find(c => c.id === commentId);
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found.' });
+    }
+
+    if (!comment.replies) {
+      comment.replies = [];
+    }
+
+    const reply = comment.replies.find(r => r.id === replyId);
+    if (!reply) {
+      return res.status(404).json({ error: 'Reply not found.' });
+    }
+
+    if (!reply.likes) {
+      reply.likes = [];
+    }
+
+    const idx = reply.likes.indexOf(currentUserId);
+    if (idx >= 0) {
+      reply.likes.splice(idx, 1);
+    } else {
+      reply.likes.push(currentUserId);
+    }
+
     db.savePost(post);
     res.json(post);
   });
@@ -439,8 +761,149 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Freebook Express Server running on http://0.0.0.0:${PORT}`);
+  });
+
+  // Create WebSocket Server attaching to the HTTP server
+  const wss = new WebSocketServer({ server });
+
+  // Map of connected clients (UserId -> WebSocket connection)
+  const wsClients = new Map<string, WebSocket>();
+
+  // Global helper on app for sending notifications in real-time
+  (app as any).sendNotificationRealtime = (recipientId: string, notification: AppNotification) => {
+    const receiverSocket = wsClients.get(recipientId);
+    if (receiverSocket && receiverSocket.readyState === WebSocket.OPEN) {
+      receiverSocket.send(JSON.stringify({
+        type: 'notification',
+        notification
+      }));
+    }
+  };
+
+  // Global helper on app for sending messages in real-time
+  (app as any).sendMsgRealtime = (msg: Message) => {
+    const receiverSocket = wsClients.get(msg.receiverId);
+    if (receiverSocket && receiverSocket.readyState === WebSocket.OPEN) {
+      receiverSocket.send(JSON.stringify({
+        type: 'message',
+        message: msg
+      }));
+    }
+  };
+
+  // Global helper on app for broadcasting status updates
+  (app as any).broadcastStatusUpdate = (userId: string, statusMode: 'active' | 'offline' | 'dnd') => {
+    const payload = JSON.stringify({
+      type: 'status_update',
+      userId,
+      statusMode
+    });
+    wsClients.forEach((clientSocket) => {
+      if (clientSocket.readyState === WebSocket.OPEN) {
+        clientSocket.send(payload);
+      }
+    });
+  };
+
+  wss.on('connection', (ws) => {
+    let authUserId: string | null = null;
+
+    ws.on('message', (data) => {
+      try {
+        const payload = JSON.parse(data.toString());
+
+        if (payload.type === 'auth') {
+          const userId = payload.userId;
+          const user = db.getUsers().find(u => u.id === userId);
+          if (user) {
+            authUserId = userId;
+            wsClients.set(userId, ws);
+
+            // Ensure they have active mode unless offline
+            if (!user.statusMode || user.statusMode === 'offline') {
+              user.statusMode = 'active';
+              db.saveUser(user);
+            }
+
+            // Sync statuses with new connections and let everyone know this user is active/online
+            (app as any).broadcastStatusUpdate(userId, user.statusMode);
+
+            // Send list of all users' current statuses immediately
+            const activeStatuses = db.getUsers()
+              .filter(u => u.statusMode && u.statusMode !== 'offline')
+              .map(u => ({ userId: u.id, statusMode: u.statusMode }));
+            
+            ws.send(JSON.stringify({
+              type: 'presence_sync',
+              statuses: activeStatuses
+            }));
+          }
+        }
+
+        if (payload.type === 'message') {
+          if (!authUserId) return;
+          const { receiverId, content } = payload;
+          if (!receiverId || !content || !content.trim()) return;
+
+          const newMessage: Message = {
+            id: `msg_${Date.now()}`,
+            senderId: authUserId,
+            receiverId,
+            content: content.trim(),
+            createdAt: new Date().toISOString()
+          };
+
+          db.saveMessage(newMessage);
+
+          // Deliver to sender to confirm receipt
+          ws.send(JSON.stringify({
+            type: 'message',
+            message: newMessage
+          }));
+
+          // Deliver to receiver securely
+          const recSocket = wsClients.get(receiverId);
+          if (recSocket && recSocket.readyState === WebSocket.OPEN) {
+            recSocket.send(JSON.stringify({
+              type: 'message',
+              message: newMessage
+            }));
+          }
+        }
+
+        if (payload.type === 'status_update') {
+          if (!authUserId) return;
+          const { statusMode } = payload;
+          if (statusMode === 'active' || statusMode === 'offline' || statusMode === 'dnd') {
+            const user = db.getUsers().find(u => u.id === authUserId);
+            if (user) {
+              user.statusMode = statusMode;
+              db.saveUser(user);
+              (app as any).broadcastStatusUpdate(authUserId, statusMode);
+            }
+          }
+        }
+
+      } catch (err) {
+        console.error('Error on WS message parsing:', err);
+      }
+    });
+
+    ws.on('close', () => {
+      if (authUserId) {
+        wsClients.delete(authUserId);
+        
+        // Go offline when socket drops
+        const user = db.getUsers().find(u => u.id === authUserId);
+        if (user) {
+          user.statusMode = 'offline';
+          db.saveUser(user);
+          (app as any).broadcastStatusUpdate(authUserId, 'offline');
+        }
+      }
+    });
   });
 }
 

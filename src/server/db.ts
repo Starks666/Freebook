@@ -6,7 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { DatabaseSchema, DBUser, Post, Friendship } from '../types';
+import { DatabaseSchema, DBUser, Post, Friendship, Message, AppNotification } from '../types';
 
 const DB_PATH = path.join(process.cwd(), 'db.json');
 
@@ -27,6 +27,7 @@ const SEED_DATA: DatabaseSchema = {
       coverUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80',
       bio: 'Adventure lover 🌲, UI/UX Designer 🎨. Always looking for the next mountain to climb!',
       createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      statusMode: 'active',
     },
     {
       id: 'user_2',
@@ -37,6 +38,7 @@ const SEED_DATA: DatabaseSchema = {
       coverUrl: 'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&w=1000&q=80',
       bio: 'Full Stack Engineer 💻. Building the future of social networking one commit at a time.',
       createdAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
+      statusMode: 'dnd',
     },
     {
       id: 'user_3',
@@ -47,6 +49,7 @@ const SEED_DATA: DatabaseSchema = {
       coverUrl: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1000&q=80',
       bio: 'Travel blogger & photographer 📸. Wandering where the wifi is weak but the views are breathtaking.',
       createdAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+      statusMode: 'active',
     }
   ],
   posts: [
@@ -122,7 +125,31 @@ const SEED_DATA: DatabaseSchema = {
       senderId: 'user_2',
       createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
     }
-  ]
+  ],
+  messages: [
+    {
+      id: 'msg_1',
+      senderId: 'user_1',
+      receiverId: 'user_2',
+      content: 'Hey Marcus! Awesome work on Freebook 🚀',
+      createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      id: 'msg_2',
+      senderId: 'user_2',
+      receiverId: 'user_1',
+      content: 'Thanks Sarah! Appreciate the kind words. Are you working on any new designs?',
+      createdAt: new Date(Date.now() - 2.5 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      id: 'msg_3',
+      senderId: 'user_1',
+      receiverId: 'user_2',
+      content: 'Yes! Sketching some layouts for the custom messenger feature right now.',
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    }
+  ],
+  notifications: []
 };
 
 // Main Database Manager
@@ -214,6 +241,59 @@ class DatabaseManager {
       return true;
     }
     return false;
+  }
+
+  public getMessages(): Message[] {
+    if (!this.data.messages) {
+      this.data.messages = [];
+    }
+    return this.data.messages;
+  }
+
+  public saveMessage(message: Message): void {
+    if (!this.data.messages) {
+      this.data.messages = [];
+    }
+    this.data.messages.push(message);
+    this.save(this.data);
+  }
+
+  public getNotifications(): AppNotification[] {
+    if (!this.data.notifications) {
+      this.data.notifications = [];
+    }
+    return this.data.notifications;
+  }
+
+  public saveNotification(notification: AppNotification): void {
+    if (!this.data.notifications) {
+      this.data.notifications = [];
+    }
+    this.data.notifications.unshift(notification); // newest first
+    this.save(this.data);
+  }
+
+  public markNotificationAsRead(id: string): void {
+    const notifications = this.getNotifications();
+    const notification = notifications.find(n => n.id === id);
+    if (notification) {
+      notification.isRead = true;
+      this.save(this.data);
+    }
+  }
+
+  public markAllNotificationsAsRead(userId: string): void {
+    const notifications = this.getNotifications();
+    let updated = false;
+    notifications.forEach(n => {
+      if (n.userId === userId && !n.isRead) {
+        n.isRead = true;
+        updated = true;
+      }
+    });
+    if (updated) {
+      this.save(this.data);
+    }
   }
 }
 

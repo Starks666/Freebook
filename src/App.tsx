@@ -4,9 +4,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AnimatePresence } from 'motion/react';
-import { ShieldAlert, RefreshCw } from 'lucide-react';
-import { User, Post, DatabaseSchema } from './types';
+import { AnimatePresence, motion } from 'motion/react';
+import { ShieldAlert, RefreshCw, Sparkles, Bell, ThumbsUp, MessageSquare, Share2, Heart } from 'lucide-react';
+import { User, Post, DatabaseSchema, AppNotification } from './types';
 import AuthSection from './components/AuthSection';
 import Navbar from './components/Navbar';
 import SidebarLeft from './components/SidebarLeft';
@@ -15,12 +15,14 @@ import FeedSection from './components/FeedSection';
 import ProfileSection from './components/ProfileSection';
 import FriendsSection from './components/FriendsSection';
 import ReelsSection from './components/ReelsSection';
+import MessengerSection from './components/MessengerSection';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'feed' | 'reels' | 'profile' | 'friends'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'reels' | 'profile' | 'friends' | 'messenger'>('feed');
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [preselectedUserId, setPreselectedUserId] = useState<string | null>(null);
 
   // Global theme state management
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -61,7 +63,11 @@ export default function App() {
   });
 
   const [loading, setLoading] = useState(true);
+  const [isFeedLoading, setIsFeedLoading] = useState(true);
   const [networkError, setNetworkError] = useState('');
+
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [activeToast, setActiveToast] = useState<AppNotification | null>(null);
 
   // Restore session from localStorage on startup
   useEffect(() => {
@@ -79,7 +85,53 @@ export default function App() {
     if (token && currentUser) {
       fetchFeed();
       fetchFriendsState();
+      fetchNotifications();
     }
+  }, [token, currentUser]);
+
+  // Global WebSocket Connection for Real-Time Notification delivery
+  useEffect(() => {
+    if (!token || !currentUser) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socketUrl = `${protocol}//${window.location.host}`;
+    const ws = new WebSocket(socketUrl);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        type: 'auth',
+        token: token
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'notification' && payload.notification) {
+          const newNotif = payload.notification as AppNotification;
+          
+          setNotifications(prev => {
+            const exists = prev.some(n => n.id === newNotif.id);
+            if (exists) return prev;
+            return [newNotif, ...prev];
+          });
+
+          setActiveToast(newNotif);
+
+          const timeoutId = setTimeout(() => {
+            setActiveToast(current => current?.id === newNotif.id ? null : current);
+          }, 5000);
+
+          return () => clearTimeout(timeoutId);
+        }
+      } catch (err) {
+        console.error('Error handling notification in App.tsx socket receiver:', err);
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
   }, [token, currentUser]);
 
   const fetchSession = async (authToken: string) => {
@@ -105,6 +157,7 @@ export default function App() {
   };
 
   const fetchFeed = async () => {
+    setIsFeedLoading(true);
     try {
       const response = await fetch('/api/feed', {
         headers: {
@@ -117,6 +170,8 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsFeedLoading(false);
     }
   };
 
@@ -133,6 +188,57 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await fetch('/api/notifications', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications(data);
+      }
+    } catch (e) {
+      console.error('Error fetching notifications:', e);
+    }
+  };
+
+  const handleMarkAllNotificationsAsRead = async () => {
+    try {
+      const response = await fetch('/api/notifications/read', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (response.ok) {
+        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      }
+    } catch (e) {
+      console.error('Error marking notifications as read:', e);
+    }
+  };
+
+  const handleMarkNotificationAsRead = async (id: string) => {
+    try {
+      const response = await fetch('/api/notifications/read', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ id })
+      });
+      if (response.ok) {
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+      }
+    } catch (e) {
+      console.error('Error marking notification as read:', e);
     }
   };
 
@@ -223,7 +329,7 @@ export default function App() {
     }
   };
 
-  const handleTabChange = (tab: 'feed' | 'reels' | 'profile' | 'friends', targetUserId: string | null = null) => {
+  const handleTabChange = (tab: 'feed' | 'reels' | 'profile' | 'friends' | 'messenger', targetUserId: string | null = null) => {
     setViewingUserId(targetUserId);
     setActiveTab(tab);
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -235,6 +341,17 @@ export default function App() {
     } else {
       handleTabChange('profile', userId);
     }
+  };
+
+  const handleUpdateCurrentUserStatus = (status: 'active' | 'offline' | 'dnd') => {
+    if (currentUser) {
+      setCurrentUser(prev => prev ? { ...prev, statusMode: status } : null);
+    }
+  };
+
+  const handleSendMessageFromProfile = (userId: string) => {
+    setPreselectedUserId(userId);
+    setActiveTab('messenger');
   };
 
   // Compile directory of all known users to search viewing context
@@ -315,6 +432,9 @@ export default function App() {
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        notifications={notifications}
+        onMarkAllNotificationsAsRead={handleMarkAllNotificationsAsRead}
+        onMarkNotificationAsRead={handleMarkNotificationAsRead}
       />
 
       {/* Main Structural Body Grid */}
@@ -338,6 +458,7 @@ export default function App() {
                 onRefreshFeed={fetchFeed}
                 onClickUser={handleClickUser}
                 token={token}
+                isLoading={isFeedLoading}
               />
             )}
 
@@ -361,6 +482,7 @@ export default function App() {
                 onRefreshFeed={fetchFeed}
                 onClickUser={handleClickUser}
                 token={token}
+                onSendMessageClick={handleSendMessageFromProfile}
               />
             )}
 
@@ -376,10 +498,22 @@ export default function App() {
                 onClickUser={handleClickUser}
               />
             )}
+
+            {activeTab === 'messenger' && (
+              <MessengerSection
+                currentUser={currentUser}
+                friends={friendsState.friends}
+                token={token}
+                preselectedUserId={preselectedUserId}
+                onClearPreselected={() => setPreselectedUserId(null)}
+                onClickUser={handleClickUser}
+                onUpdateCurrentUserStatus={handleUpdateCurrentUserStatus}
+              />
+            )}
           </div>
 
           {/* 3. Right Sidebar Contacts and Request Counters */}
-          {activeTab !== 'profile' && activeTab !== 'friends' && (
+          {activeTab !== 'profile' && activeTab !== 'friends' && activeTab !== 'messenger' && (
             <SidebarRight
               pendingRequests={friendsState.pendingReceived}
               friends={friendsState.friends}
@@ -391,6 +525,76 @@ export default function App() {
 
         </div>
       </main>
+
+      {/* Live Global Toast Popups */}
+      <AnimatePresence>
+        {activeToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, x: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, x: 20, scale: 0.9 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="fixed top-16 right-4 z-50 bg-white dark:bg-gray-900 border border-blue-100 dark:border-blue-900 shadow-2xl rounded-2xl p-4 w-80 sm:w-96 flex items-start gap-4 cursor-pointer select-none"
+            onClick={() => {
+              // Mark as read
+              handleMarkNotificationAsRead(activeToast.id);
+              // Clear active toast
+              setActiveToast(null);
+              // Switch to feed
+              handleTabChange('feed', null);
+              // Scroll to post
+              setTimeout(() => {
+                const el = document.getElementById(`post-${activeToast.postId}`);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  el.classList.add('ring-4', 'ring-blue-500/40', 'dark:ring-blue-400/30', 'ring-offset-2', 'dark:ring-offset-gray-900', 'transition-all', 'duration-500');
+                  setTimeout(() => {
+                    el.classList.remove('ring-4', 'ring-blue-500/40', 'dark:ring-blue-400/30', 'ring-offset-2', 'dark:ring-offset-gray-900');
+                  }, 3000);
+                }
+              }, 500);
+            }}
+          >
+            <div className="relative shrink-0 w-11 h-11">
+              <img
+                src={activeToast.senderAvatar}
+                alt={activeToast.senderName}
+                className="w-11 h-11 rounded-full object-cover border border-gray-150 dark:border-gray-800"
+                referrerPolicy="no-referrer"
+              />
+              <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center ring-2 ring-white dark:ring-gray-900 shadow">
+                <Sparkles className="w-2.5 h-2.5 text-white" />
+              </span>
+            </div>
+            
+            <div className="flex-grow min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-xs text-gray-900 dark:text-white truncate">
+                  {activeToast.senderName}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveToast(null);
+                  }}
+                  className="px-1.5 py-0.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0 cursor-pointer text-[10px] font-bold font-mono transition-colors"
+                >
+                  DISMISS
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 dark:text-gray-350 mt-1 font-sans leading-relaxed">
+                {activeToast.type === 'like' && 'liked your post'}
+                {activeToast.type === 'reaction' && `reacted with ${activeToast.reactionType} to your post`}
+                {activeToast.type === 'comment' && `commented: "${activeToast.commentContent}"`}
+                {activeToast.type === 'share' && 'shared your post'}
+              </p>
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold block mt-1.5 uppercase tracking-wider">
+                Click to view post
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

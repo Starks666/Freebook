@@ -185,7 +185,15 @@ export default function SidebarRight({
                     className="w-9 h-9 rounded-full object-cover border border-gray-150 dark:border-gray-750"
                     referrerPolicy="no-referrer"
                   />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-white dark:border-gray-900 ring-1 ring-green-600"></span>
+                  <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-gray-900 ring-1 ${
+                    friend.statusMode === 'active' ? 'bg-emerald-500 ring-emerald-600/40' :
+                    friend.statusMode === 'dnd' ? 'bg-rose-500 ring-rose-600/40' :
+                    'bg-gray-400 ring-gray-500/40'
+                  }`} title={
+                    friend.statusMode === 'active' ? 'Active Now' :
+                    friend.statusMode === 'dnd' ? 'Do Not Disturb' :
+                    'Offline Mode'
+                  }></span>
                 </div>
                 <div className="min-w-0">
                   <span className="font-bold text-sm text-gray-800 dark:text-white block truncate hover:underline">

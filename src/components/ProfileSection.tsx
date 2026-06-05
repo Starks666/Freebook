@@ -15,7 +15,8 @@ import {
   X,
   FileCode,
   Upload,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare
 } from 'lucide-react';
 import { User, Post } from '../types';
 import FeedSection from './FeedSection';
@@ -33,6 +34,7 @@ interface ProfileSectionProps {
   onRefreshFeed: () => void;
   onClickUser: (userId: string) => void;
   token: string;
+  onSendMessageClick?: (userId: string) => void;
 }
 
 export default function ProfileSection({
@@ -46,7 +48,8 @@ export default function ProfileSection({
   onUpdateProfile,
   onRefreshFeed,
   onClickUser,
-  token
+  token,
+  onSendMessageClick
 }: ProfileSectionProps) {
   const isMe = currentUser.id === viewingUser.id;
 
@@ -261,6 +264,16 @@ export default function ProfileSection({
                     <UserMinus className="w-4 h-4 hidden group-hover:inline text-red-500" />
                     <span className="group-hover:hidden">Connected Friends</span>
                     <span className="hidden group-hover:inline">Unfriend User</span>
+                  </button>
+                )}
+
+                {onSendMessageClick && (
+                  <button
+                    onClick={() => onSendMessageClick(viewingUser.id)}
+                    className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-750 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-bold shadow-xs transition-colors flex items-center gap-1.5 border border-gray-200 dark:border-gray-700 cursor-pointer"
+                  >
+                    <MessageSquare className="w-4 h-4 text-blue-500 fill-blue-500/10" />
+                    <span>Message</span>
                   </button>
                 )}
               </div>

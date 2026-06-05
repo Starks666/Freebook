@@ -11,6 +11,17 @@ export interface User {
   coverUrl: string;
   bio: string;
   createdAt: string;
+  statusMode?: 'active' | 'offline' | 'dnd';
+}
+
+export interface CommentReply {
+  id: string;
+  userId: string;
+  displayName: string;
+  avatarUrl: string;
+  content: string;
+  createdAt: string;
+  likes?: string[]; // List of User IDs who liked the reply
 }
 
 export interface Comment {
@@ -20,6 +31,8 @@ export interface Comment {
   avatarUrl: string;
   content: string;
   createdAt: string;
+  likes?: string[]; // List of User IDs who liked the comment
+  replies?: CommentReply[];
 }
 
 export interface Post {
@@ -51,8 +64,39 @@ export interface DBUser extends User {
   passwordHash: string;
 }
 
+export interface Message {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  content: string;
+  createdAt: string;
+  voiceUrl?: string;
+  voiceDuration?: number;
+  isCallEvent?: boolean;
+  callType?: 'voice' | 'video';
+  callStatus?: 'completed' | 'missed' | 'declined';
+  callDuration?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  userId: string; // The user who should receive this notification
+  senderId: string; // The user who triggered the event
+  senderName: string;
+  senderAvatar: string;
+  type: 'like' | 'reaction' | 'comment' | 'share';
+  postId: string;
+  postContentExcerpt?: string;
+  reactionType?: string;
+  commentContent?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export interface DatabaseSchema {
   users: DBUser[];
   posts: Post[];
   friendships: Friendship[];
+  messages: Message[];
+  notifications: AppNotification[];
 }

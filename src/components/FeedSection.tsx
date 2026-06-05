@@ -17,7 +17,8 @@ import {
   AlertTriangle,
   EyeOff,
   Flag,
-  CheckCircle
+  CheckCircle,
+  Pencil
 } from 'lucide-react';
 import { User, Post, Comment } from '../types';
 import { playReactionTone } from '../utils/audio';
@@ -80,6 +81,7 @@ interface FeedSectionProps {
   onRefreshFeed: () => void;
   onClickUser: (userId: string) => void;
   token: string;
+  isLoading?: boolean;
 }
 
 export default function FeedSection({ 
@@ -87,7 +89,8 @@ export default function FeedSection({
   posts, 
   onRefreshFeed, 
   onClickUser,
-  token 
+  token,
+  isLoading = false
 }: FeedSectionProps) {
   // Post Creator states
   const [content, setContent] = useState('');
@@ -113,6 +116,16 @@ export default function FeedSection({
   const [reportReason, setReportReason] = useState<string>('');
   const [reportIssues, setReportIssues] = useState<string[]>([]);
   const [reportSuccess, setReportSuccess] = useState(false);
+
+  // Post Editing States
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState<string>('');
+  const [editingImageUrl, setEditingImageUrl] = useState<string>('');
+  const [isUpdatingPost, setIsUpdatingPost] = useState(false);
+
+  // Comment & replies states
+  const [activeReplyCommentId, setActiveReplyCommentId] = useState<string | null>(null);
+  const [replyInputs, setReplyInputs] = useState<{ [commentId: string]: string }>({});
 
   const getPostReactionsState = (p: Post) => {
     const rs = p.reactions || {};
@@ -277,6 +290,61 @@ export default function FeedSection({
     }
   };
 
+  const handleToggleCommentLike = async (postId: string, commentId: string) => {
+    try {
+      const response = await fetch(`/api/posts/${postId}/comments/${commentId}/toggle-like`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        onRefreshFeed();
+      }
+    } catch (e) {
+      console.error('Comment like error:', e);
+    }
+  };
+
+  const handlePostCommentReply = async (postId: string, commentId: string, text: string) => {
+    if (!text.trim()) return;
+    try {
+      const response = await fetch(`/api/posts/${postId}/comments/${commentId}/reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ content: text })
+      });
+      if (response.ok) {
+        setReplyInputs(prev => ({ ...prev, [commentId]: '' }));
+        setActiveReplyCommentId(null);
+        onRefreshFeed();
+      }
+    } catch (e) {
+      console.error('Comment reply error:', e);
+    }
+  };
+
+  const handleToggleReplyLike = async (postId: string, commentId: string, replyId: string) => {
+    try {
+      const response = await fetch(`/api/posts/${postId}/comments/${commentId}/replies/${replyId}/toggle-like`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        onRefreshFeed();
+      }
+    } catch (e) {
+      console.error('Reply like error:', e);
+    }
+  };
+
   const formatTime = (isoString: string) => {
     try {
       const diffMs = Date.now() - new Date(isoString).getTime();
@@ -335,7 +403,7 @@ export default function FeedSection({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               rows={3}
-              className="w-full border-0 focus:ring-0 text-sm focus:outline-none resize-none text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 bg-gray-50 dark:bg-gray-800 rounded-xl p-3 focus:bg-white dark:focus:bg-gray-750 transition-colors"
+              className="w-full border-0 focus:ring-0 text-sm focus:outline-none resize-none text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 bg-gray-50 dark:bg-gray-800 rounded-xl p-3 focus:bg-gray-50 dark:focus:bg-gray-800 transition-colors"
             />
 
             {showImageInput && (
@@ -391,7 +459,88 @@ export default function FeedSection({
       </div>
 
       {/* 2. Scrollable Posts List */}
-      {posts.filter(post => !hiddenPostIds.includes(post.id)).length === 0 ? (
+      {isLoading ? (
+        <div className="space-y-6">
+          {/* Skeleton Post Card 1 (with mock image attachment) */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col p-4 space-y-4 animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-800" />
+                <div className="space-y-2">
+                  <div className="h-3.5 w-32 bg-gray-200 dark:bg-gray-800 rounded-md" />
+                  <div className="h-2.5 w-20 bg-gray-155 dark:bg-gray-805 rounded-md" />
+                </div>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-gray-150 dark:bg-gray-800" />
+            </div>
+            <div className="space-y-2 pt-1">
+              <div className="h-3 w-full bg-gray-150 dark:bg-gray-800 rounded" />
+              <div className="h-3 w-5/6 bg-gray-150 dark:bg-gray-800 rounded" />
+              <div className="h-3 w-3/4 bg-gray-150 dark:bg-gray-800 rounded" />
+            </div>
+            <div className="h-48 sm:h-56 bg-gray-100 dark:bg-gray-950 rounded-lg border border-gray-100 dark:border-gray-800/45" />
+            <div className="flex items-center justify-between border-t border-b border-gray-100 dark:border-gray-800 py-3">
+              <div className="h-3 w-20 bg-gray-200 dark:bg-gray-800 rounded" />
+              <div className="h-3 w-14 bg-gray-200 dark:bg-gray-800 rounded" />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+            </div>
+          </div>
+
+          {/* Skeleton Post Card 2 (text content only) */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col p-4 space-y-4 animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-800" />
+                <div className="space-y-2">
+                  <div className="h-3.5 w-28 bg-gray-200 dark:bg-gray-800 rounded-md" />
+                  <div className="h-2.5 w-24 bg-gray-155 dark:bg-gray-805 rounded-md" />
+                </div>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-gray-150 dark:bg-gray-800" />
+            </div>
+            <div className="space-y-2 pt-1">
+              <div className="h-3 w-full bg-gray-150 dark:bg-gray-800 rounded" />
+              <div className="h-3 w-11/12 bg-gray-150 dark:bg-gray-800 rounded" />
+            </div>
+            <div className="flex items-center justify-between border-t border-b border-gray-100 dark:border-gray-800 py-3">
+              <div className="h-3 w-16 bg-gray-200 dark:bg-gray-800 rounded" />
+              <div className="h-3 w-12 bg-gray-200 dark:bg-gray-800 rounded" />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+            </div>
+          </div>
+
+          {/* Skeleton Post Card 3 (compact layout) */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col p-4 space-y-4 animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-800" />
+                <div className="space-y-2">
+                  <div className="h-3.5 w-36 bg-gray-200 dark:bg-gray-800 rounded-md" />
+                  <div className="h-2.5 w-16 bg-gray-155 dark:bg-gray-850 rounded-md" />
+                </div>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-gray-150 dark:bg-gray-800" />
+            </div>
+            <div className="space-y-2 pt-1">
+              <div className="h-3 w-full bg-gray-150 dark:bg-gray-800 rounded" />
+              <div className="h-3 w-2/3 bg-gray-150 dark:bg-gray-800 rounded" />
+            </div>
+            <div className="flex gap-2 pt-3">
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+              <div className="h-8 flex-grow bg-gray-100 dark:bg-gray-800/70 rounded-lg" />
+            </div>
+          </div>
+        </div>
+      ) : posts.filter(post => !hiddenPostIds.includes(post.id)).length === 0 ? (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-12 text-center text-gray-500 dark:text-gray-400 space-y-4">
           <p className="font-semibold text-lg">No updates yet</p>
           <p className="text-sm text-gray-400 dark:text-gray-500">Be the first to create an updates thread or make new friends to light up the feed!</p>
@@ -416,7 +565,7 @@ export default function FeedSection({
             }
 
             return (
-              <div key={post.id} className={`rounded-xl border shadow-sm overflow-hidden flex flex-col transition-all duration-300 ${cardBorderClass}`}>
+              <div key={post.id} id={`post-${post.id}`} className={`rounded-xl border shadow-sm overflow-hidden flex flex-col transition-all duration-300 ${cardBorderClass}`}>
                 
                 {/* Post Header */}
                 <div className="p-4 flex items-center justify-between">
@@ -489,17 +638,33 @@ export default function FeedSection({
 
                           {/* Allow author to also delete permanently */}
                           {post.userId === currentUser.id && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMenuPostId(null);
-                                handleDeletePost(post.id);
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 dark:text-red-400 flex items-center gap-2 cursor-pointer transition-colors border-b border-gray-100 dark:border-gray-800"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              <span>Delete permanently</span>
-                            </button>
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveMenuPostId(null);
+                                  setEditingPostId(post.id);
+                                  setEditingContent(post.content);
+                                  setEditingImageUrl(post.imageUrl || '');
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 dark:text-blue-400 flex items-center gap-2 cursor-pointer transition-colors border-b border-gray-100 dark:border-gray-800"
+                              >
+                                <Pencil className="w-4 h-4" />
+                                <span>Edit post details</span>
+                              </button>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveMenuPostId(null);
+                                  handleDeletePost(post.id);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 dark:text-red-400 flex items-center gap-2 cursor-pointer transition-colors border-b border-gray-100 dark:border-gray-800"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                <span>Delete permanently</span>
+                              </button>
+                            </>
                           )}
 
                           {/* Option 2: Report Option */}
@@ -526,25 +691,96 @@ export default function FeedSection({
                   </div>
                 </div>
 
-                {/* Post Content */}
-                <div className="px-4 pb-3 text-sm text-gray-800 dark:text-white/85 whitespace-pre-wrap leading-relaxed">
-                  {post.content}
-                </div>
-
-                {/* Optional Post Image */}
-                {post.imageUrl && (
-                  <div className="border-y border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 max-h-[500px] overflow-hidden flex items-center justify-center">
-                    <img
-                      src={post.imageUrl}
-                      alt="Post attachment"
-                      className="w-full h-full object-cover select-none animate-fade-in"
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        // Suppress visually broken image boxes
-                        e.currentTarget.style.display = 'none';
-                      }}
+                {editingPostId === post.id ? (
+                  <form 
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setIsUpdatingPost(true);
+                      try {
+                        const response = await fetch(`/api/posts/${post.id}`, {
+                          method: 'PUT',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                          },
+                          body: JSON.stringify({ content: editingContent, imageUrl: editingImageUrl.trim() || undefined })
+                        });
+                        if (response.ok) {
+                          setEditingPostId(null);
+                          onRefreshFeed();
+                        } else {
+                          const errData = await response.json();
+                          alert(errData.error || 'Failed to update post.');
+                        }
+                      } catch (err) {
+                        console.error('Update post error:', err);
+                        alert('An error occurred while updating the post.');
+                      } finally {
+                        setIsUpdatingPost(false);
+                      }
+                    }}
+                    className="px-4 pb-4 space-y-3"
+                  >
+                    <textarea
+                      value={editingContent}
+                      onChange={(e) => setEditingContent(e.target.value)}
+                      rows={3}
+                      className="w-full text-sm border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-850 dark:text-white rounded-xl p-3 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      placeholder="Write your updated post thoughts..."
+                      required
                     />
-                  </div>
+                    
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase tracking-wider font-extrabold text-gray-500 dark:text-gray-400">Post Image URL (Optional)</label>
+                      <input
+                        type="url"
+                        value={editingImageUrl}
+                        onChange={(e) => setEditingImageUrl(e.target.value)}
+                        placeholder="Paste an Unsplash image URL or leave empty to remove..."
+                        className="w-full px-3 py-2 text-xs border border-gray-250 dark:border-gray-755 bg-gray-55 dark:bg-gray-850 text-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingPostId(null)}
+                        className="px-3.5 py-1.5 text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-605 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-750 rounded-lg cursor-pointer transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isUpdatingPost || (!editingContent.trim() && !editingImageUrl.trim())}
+                        className="px-4 py-1.5 text-xs font-bold bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 text-white rounded-lg cursor-pointer transition-all disabled:opacity-50"
+                      >
+                        {isUpdatingPost ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    {/* Post Content */}
+                    <div className="px-4 pb-3 text-sm text-gray-800 dark:text-white/85 whitespace-pre-wrap leading-relaxed animate-fade-in">
+                      {post.content}
+                    </div>
+
+                    {/* Optional Post Image */}
+                    {post.imageUrl && (
+                      <div className="border-y border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 max-h-[500px] overflow-hidden flex items-center justify-center">
+                        <img
+                          src={post.imageUrl}
+                          alt="Post attachment"
+                          className="w-full h-full object-cover select-none animate-fade-in"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            // Suppress visually broken image boxes
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Engagement counts */}
@@ -700,8 +936,18 @@ export default function FeedSection({
                   </button>
 
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
+                      try {
+                        await fetch(`/api/posts/${post.id}/share`, {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${token}`
+                          }
+                        });
+                      } catch (e) {
+                        console.error('Error reporting shared post event:', e);
+                      }
                       alert('Post share link copied to clipboard!');
                     }}
                     className="flex-grow flex items-center justify-center gap-2 p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
@@ -717,35 +963,157 @@ export default function FeedSection({
                     
                     {/* Render comments thread */}
                     {post.comments.length > 0 && (
-                      <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                      <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
                         {post.comments.map((comment) => (
-                          <div key={comment.id} className="flex gap-3 items-start group">
-                            <AnimatedMedia
-                              src={comment.avatarUrl}
-                              alt={comment.displayName}
-                              className="w-8 h-8 rounded-full object-cover shrink-0 cursor-pointer hover:opacity-85 border border-gray-100 dark:border-gray-800"
-                              onClick={() => onClickUser(comment.userId)}
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="flex-grow space-y-1">
-                              <div className="bg-white dark:bg-gray-900 p-3 rounded-2xl border border-gray-150 dark:border-gray-800 inline-block max-w-[90%] text-sm shadow-sm relative text-gray-800 dark:text-gray-200">
-                                <span 
-                                  onClick={() => onClickUser(comment.userId)}
-                                  className="font-bold text-gray-850 dark:text-white hover:underline cursor-pointer block text-xs"
-                                >
-                                  {comment.displayName}
-                                </span>
-                                <p className="text-gray-750 dark:text-white/85 leading-relaxed mt-0.5">{comment.content}</p>
+                          <div key={comment.id} className="space-y-2">
+                            <div className="flex gap-3 items-start group">
+                              <AnimatedMedia
+                                src={comment.avatarUrl}
+                                alt={comment.displayName}
+                                className="w-8 h-8 rounded-full object-cover shrink-0 cursor-pointer hover:opacity-85 border border-gray-100 dark:border-gray-800"
+                                onClick={() => onClickUser(comment.userId)}
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="flex-grow space-y-0.5">
+                                <div className="bg-white dark:bg-gray-900 p-3 rounded-2xl border border-gray-150 dark:border-gray-800 inline-block max-w-[95%] text-sm shadow-xs relative text-gray-800 dark:text-gray-200">
+                                  <span 
+                                    onClick={() => onClickUser(comment.userId)}
+                                    className="font-bold text-gray-850 dark:text-white hover:underline cursor-pointer block text-xs"
+                                  >
+                                    {comment.displayName}
+                                  </span>
+                                  <p className="text-gray-750 dark:text-white/85 leading-relaxed mt-0.5">{comment.content}</p>
+                                </div>
+
+                                <div className="flex items-center gap-2.5 mt-1 ml-1 text-[11px] text-gray-500 font-medium select-none">
+                                  <span 
+                                    className="relative group/time cursor-help text-[10px] text-gray-400 dark:text-gray-500 font-mono"
+                                    title={formatAbsoluteTime(comment.createdAt)}
+                                  >
+                                    {formatTime(comment.createdAt)}
+                                  </span>
+
+                                  <span className="text-gray-300 dark:text-gray-750">•</span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleCommentLike(post.id, comment.id)}
+                                    className={`hover:underline cursor-pointer transition-colors ${
+                                      comment.likes?.includes(currentUser.id) 
+                                        ? 'text-blue-600 dark:text-blue-400 font-bold' 
+                                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                                    }`}
+                                  >
+                                    {comment.likes?.includes(currentUser.id) ? 'Liked' : 'Like'}
+                                    {comment.likes && comment.likes.length > 0 && ` (${comment.likes.length})`}
+                                  </button>
+
+                                  <span className="text-gray-300 dark:text-gray-750">•</span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (activeReplyCommentId === comment.id) {
+                                        setActiveReplyCommentId(null);
+                                      } else {
+                                        setActiveReplyCommentId(comment.id);
+                                        setReplyInputs(prev => ({ ...prev, [comment.id]: prev[comment.id] || '' }));
+                                      }
+                                    }}
+                                    className={`hover:underline cursor-pointer transition-colors ${
+                                      activeReplyCommentId === comment.id
+                                        ? 'text-blue-600 dark:text-blue-400 font-bold'
+                                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                                    }`}
+                                  >
+                                    Reply
+                                    {comment.replies && comment.replies.length > 0 && ` (${comment.replies.length})`}
+                                  </button>
+                                </div>
+
+                                {/* Render comment replies nested */}
+                                {comment.replies && comment.replies.length > 0 && (
+                                  <div className="ml-2 mt-2.5 pl-3 border-l-2 border-gray-200 dark:border-gray-800 space-y-3">
+                                    {comment.replies.map((reply) => (
+                                      <div key={reply.id} className="flex gap-2.5 items-start group/reply">
+                                        <AnimatedMedia
+                                          src={reply.avatarUrl}
+                                          alt={reply.displayName}
+                                          className="w-6.5 h-6.5 rounded-full object-cover shrink-0 cursor-pointer hover:opacity-85 border border-gray-100 dark:border-gray-800"
+                                          onClick={() => onClickUser(reply.userId)}
+                                          referrerPolicy="no-referrer"
+                                        />
+                                        <div className="flex-grow space-y-0.5">
+                                          <div className="bg-gray-100/70 dark:bg-gray-900/60 p-2.5 rounded-xl border border-gray-150/40 dark:border-gray-850 inline-block max-w-[95%] text-xs shadow-2xs relative text-gray-800 dark:text-gray-200">
+                                            <span 
+                                              onClick={() => onClickUser(reply.userId)}
+                                              className="font-bold text-gray-850 dark:text-white hover:underline cursor-pointer block text-[10px]"
+                                            >
+                                              {reply.displayName}
+                                            </span>
+                                            <p className="text-gray-755 dark:text-white/80 leading-normal mt-0.5">{reply.content}</p>
+                                          </div>
+                                          <div className="flex items-center gap-2 mt-0.5 ml-1 text-[10px] text-gray-400 dark:text-gray-500 font-medium select-none">
+                                            <span>{formatTime(reply.createdAt)}</span>
+                                            <span className="text-gray-300 dark:text-gray-700">•</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleToggleReplyLike(post.id, comment.id, reply.id)}
+                                              className={`hover:underline cursor-pointer transition-colors ${
+                                                reply.likes?.includes(currentUser.id)
+                                                  ? 'text-blue-600 dark:text-blue-400 font-bold'
+                                                  : 'text-gray-450 hover:text-gray-600 dark:hover:text-gray-300'
+                                              }`}
+                                            >
+                                              {reply.likes?.includes(currentUser.id) ? 'Liked' : 'Like'}
+                                              {reply.likes && reply.likes.length > 0 && ` (${reply.likes.length})`}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Direct reply form inline */}
+                                {activeReplyCommentId === comment.id && (
+                                  <form 
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      handlePostCommentReply(post.id, comment.id, replyInputs[comment.id] || '');
+                                    }}
+                                    className="ml-2 mt-2 flex gap-2 animate-fade-in"
+                                  >
+                                    <AnimatedMedia
+                                      src={currentUser.avatarUrl}
+                                      alt={currentUser.displayName}
+                                      className="w-6.5 h-6.5 rounded-full object-cover shrink-0 border border-gray-100 dark:border-gray-800"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <div className="flex-grow flex items-center bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-full px-3 py-1 focus-within:ring-1 focus-within:ring-blue-500 shadow-2xs">
+                                      <input
+                                        type="text"
+                                        placeholder={`Reply to ${comment.displayName}...`}
+                                        value={replyInputs[comment.id] || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setReplyInputs(prev => ({ ...prev, [comment.id]: val }));
+                                        }}
+                                        className="flex-grow text-xs focus:ring-0 focus:outline-none border-0 text-gray-800 dark:text-white bg-transparent"
+                                        autoFocus
+                                      />
+                                      <button
+                                        type="submit"
+                                        disabled={!(replyInputs[comment.id] || '').trim()}
+                                        className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:scale-105 transition-all disabled:opacity-30 shrink-0 p-0.5 cursor-pointer"
+                                      >
+                                        <Send className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </form>
+                                )}
+
                               </div>
-                              <span 
-                                className="relative group/time cursor-help text-[10px] text-gray-450 dark:text-gray-500 font-mono inline-block pl-3 select-none hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
-                                title={formatAbsoluteTime(comment.createdAt)}
-                              >
-                                {formatTime(comment.createdAt)}
-                                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 opacity-0 group-hover/time:opacity-100 bg-gray-900 dark:bg-gray-950 text-white dark:text-gray-200 text-[9px] font-medium px-2 py-0.5 rounded shadow-lg transition-all duration-200 whitespace-nowrap z-50">
-                                  {formatAbsoluteTime(comment.createdAt)}
-                                </span>
-                              </span>
                             </div>
                           </div>
                         ))}
