@@ -8,7 +8,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { WebSocketServer, WebSocket } from 'ws';
 import { db, hashPassword } from './src/server/db';
-import { User, DBUser, Post, Comment, CommentReply, Friendship, Message, AppNotification } from './src/types';
+import { User, DBUser, Post, Comment, CommentReply, Friendship, Message, AppNotification, Story } from './src/types';
 
 async function startServer() {
   const app = express();
@@ -440,6 +440,45 @@ async function startServer() {
   });
 
 
+  // ------------------- STORY ROUTES -------------------
+
+  // Get active stories
+  app.get('/api/stories', authenticateUser, (req, res) => {
+    const stories = db.getStories();
+    const now = new Date().getTime();
+    const activeStories = stories.filter(s => {
+      const createdAt = new Date(s.createdAt).getTime();
+      return (now - createdAt) < 24 * 60 * 60 * 1000; // 24 hours
+    });
+    res.json(activeStories);
+  });
+
+  // Post a story
+  app.post('/api/stories', authenticateUser, (req, res) => {
+    const user = res.locals.user as DBUser;
+    const { imageUrl } = req.body;
+
+    if (!imageUrl) {
+      return res.status(400).json({ error: 'Story requires an image URL.' });
+    }
+
+    const newStory: Story = {
+      id: `story_${Date.now()}`,
+      userId: user.id,
+      author: {
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        username: user.username
+      },
+      imageUrl: imageUrl.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    db.saveStory(newStory);
+    res.status(201).json(newStory);
+  });
+
+
   // ------------------- POST ROUTES -------------------
 
   // Create a post
@@ -634,30 +673,28 @@ async function startServer() {
     res.json(post);
   });
 
-  // Toggle like on a comment
-  app.post('/api/posts/:postId/comments/:commentId/toggle-like', authenticateUser, (req, res) => {
+  // Toggle reaction on a comment
+  app.post('/api/posts/:postId/comments/:commentId/react', authenticateUser, (req, res) => {
     const { postId, commentId } = req.params;
     const currentUserId = res.locals.userId;
+    const { type } = req.body;
+
+    if (!type || !['like', 'love', 'haha', 'sad', 'angry'].includes(type)) {
+      return res.status(400).json({ error: 'A valid reaction type calculation is required.' });
+    }
 
     const post = db.getPosts().find(p => p.id === postId);
-    if (!post) {
-      return res.status(404).json({ error: 'Post not found.' });
-    }
+    if (!post) return res.status(404).json({ error: 'Post not found.' });
 
     const comment = post.comments.find(c => c.id === commentId);
-    if (!comment) {
-      return res.status(404).json({ error: 'Comment not found.' });
-    }
+    if (!comment) return res.status(404).json({ error: 'Comment not found.' });
 
-    if (!comment.likes) {
-      comment.likes = [];
-    }
+    if (!comment.reactions) comment.reactions = {};
 
-    const idx = comment.likes.indexOf(currentUserId);
-    if (idx >= 0) {
-      comment.likes.splice(idx, 1);
+    if (comment.reactions[currentUserId] === type) {
+      delete comment.reactions[currentUserId];
     } else {
-      comment.likes.push(currentUserId);
+      comment.reactions[currentUserId] = type;
     }
 
     db.savePost(post);
@@ -699,6 +736,43 @@ async function startServer() {
     };
 
     comment.replies.push(newReply);
+    db.savePost(post);
+    res.json(post);
+  });
+
+  // Reply to a reply (nested reply)
+  app.post('/api/posts/:postId/comments/:commentId/replies/:replyId/reply', authenticateUser, (req, res) => {
+    const { postId, commentId, replyId } = req.params;
+    const user = res.locals.user as DBUser;
+    const { content } = req.body;
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'Reply content is required.' });
+    }
+
+    const post = db.getPosts().find(p => p.id === postId);
+    if (!post) return res.status(404).json({ error: 'Post not found.' });
+
+    const comment = post.comments.find(c => c.id === commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found.' });
+
+    if (!comment.replies) comment.replies = [];
+    const reply = comment.replies.find(r => r.id === replyId);
+    if (!reply) return res.status(404).json({ error: 'Reply not found.' });
+    
+    if (!reply.replies) reply.replies = [];
+
+    const newReply: CommentReply = {
+      id: `reply_${Date.now()}`,
+      userId: user.id,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+      content: content.trim(),
+      createdAt: new Date().toISOString(),
+      likes: []
+    };
+
+    reply.replies.push(newReply);
     db.savePost(post);
     res.json(post);
   });

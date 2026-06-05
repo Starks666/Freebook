@@ -6,7 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { DatabaseSchema, DBUser, Post, Friendship, Message, AppNotification } from '../types';
+import { DatabaseSchema, DBUser, Post, Friendship, Message, AppNotification, Story } from '../types';
 
 const DB_PATH = path.join(process.cwd(), 'db.json');
 
@@ -149,7 +149,31 @@ const SEED_DATA: DatabaseSchema = {
       createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
     }
   ],
-  notifications: []
+  notifications: [],
+  stories: [
+    {
+      id: 'story_seed_1',
+      userId: 'user_1',
+      author: {
+        displayName: 'Sarah Jones',
+        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
+        username: 'sarah_j'
+      },
+      imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      id: 'story_seed_2',
+      userId: 'user_3',
+      author: {
+        displayName: 'Emma Watson',
+        avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80',
+        username: 'emma_w'
+      },
+      imageUrl: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=800&q=80',
+      createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+    }
+  ]
 };
 
 // Main Database Manager
@@ -280,6 +304,21 @@ class DatabaseManager {
       return true;
     }
     return false;
+  }
+
+  public getStories(): Story[] {
+    if (!this.data.stories) {
+      this.data.stories = [];
+    }
+    return this.data.stories;
+  }
+
+  public saveStory(story: Story): void {
+    if (!this.data.stories) {
+      this.data.stories = [];
+    }
+    this.data.stories.unshift(story); // newest first
+    this.save(this.data);
   }
 
   public getNotifications(): AppNotification[] {

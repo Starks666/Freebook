@@ -14,6 +14,18 @@ export interface User {
   statusMode?: 'active' | 'offline' | 'dnd';
 }
 
+export interface Story {
+  id: string;
+  userId: string;
+  author: {
+    displayName: string;
+    avatarUrl: string;
+    username: string;
+  };
+  imageUrl: string;
+  createdAt: string; 
+}
+
 export interface CommentReply {
   id: string;
   userId: string;
@@ -22,6 +34,8 @@ export interface CommentReply {
   content: string;
   createdAt: string;
   likes?: string[]; // List of User IDs who liked the reply
+  reactions?: { [userId: string]: 'like' | 'love' | 'haha' | 'sad' | 'angry' };
+  replies?: CommentReply[]; // Support nested replies
 }
 
 export interface Comment {
@@ -32,6 +46,7 @@ export interface Comment {
   content: string;
   createdAt: string;
   likes?: string[]; // List of User IDs who liked the comment
+  reactions?: { [userId: string]: 'like' | 'love' | 'haha' | 'sad' | 'angry' };
   replies?: CommentReply[];
 }
 
@@ -102,4 +117,5 @@ export interface DatabaseSchema {
   friendships: Friendship[];
   messages: Message[];
   notifications: AppNotification[];
+  stories: Story[];
 }

@@ -23,6 +23,7 @@ import {
 import { User, Post, Comment } from '../types';
 import { playReactionTone } from '../utils/audio';
 import AnimatedMedia from './AnimatedMedia';
+import Stories from './Stories';
 
 const pickerVariants = {
   hidden: { opacity: 0, scale: 0.85, y: 15 },
@@ -381,6 +382,8 @@ export default function FeedSection({
   return (
     <div className="flex-1 max-w-2xl space-y-6">
       
+      <Stories currentUser={currentUser} token={token} />
+
       {/* 1. Post Creation Composer Card */}
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-4 space-y-4">
         {postError && (
