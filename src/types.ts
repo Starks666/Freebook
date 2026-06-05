@@ -72,6 +72,9 @@ export interface Message {
   createdAt: string;
   voiceUrl?: string;
   voiceDuration?: number;
+  imageUrl?: string;
+  isEdited?: boolean;
+  seenAt?: string;
   isCallEvent?: boolean;
   callType?: 'voice' | 'video';
   callStatus?: 'completed' | 'missed' | 'declined';

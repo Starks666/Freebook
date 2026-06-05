@@ -131,7 +131,7 @@ export default function Navbar({
               ? 'border-blue-600 text-blue-600 dark:text-blue-500 dark:border-blue-500'
               : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-750 dark:hover:text-gray-200'
           }`}
-          title="Texter"
+          title="Free Chat"
         >
           <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
@@ -426,7 +426,7 @@ export default function Navbar({
                     }`}
                   >
                     <MessageSquare className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                    <span>Texter</span>
+                    <span>Free Chat</span>
                   </button>
                   <button
                     onClick={() => handleMenuTabSelect('profile')}

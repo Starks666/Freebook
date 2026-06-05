@@ -192,7 +192,8 @@ async function startServer() {
       receiverId, 
       content, 
       voiceUrl, 
-      voiceDuration, 
+      voiceDuration,
+      imageUrl, 
       isCallEvent, 
       callType, 
       callStatus, 
@@ -203,17 +204,18 @@ async function startServer() {
       return res.status(400).json({ error: 'Receiver ID is required.' });
     }
 
-    if (!content && !voiceUrl && !isCallEvent) {
-      return res.status(400).json({ error: 'Content, voice representation, or call events are required.' });
+    if (!content && !voiceUrl && !imageUrl && !isCallEvent) {
+      return res.status(400).json({ error: 'Content, voice representation, imageUrl, or call events are required.' });
     }
 
     const newMessage: Message = {
       id: `msg_${Date.now()}`,
       senderId: currentUserId,
       receiverId,
-      content: content ? content.trim() : (voiceUrl ? '🎤 Voice Message' : (isCallEvent ? '📞 Call Log' : '')),
+      content: content ? content.trim() : (voiceUrl ? '🎤 Voice Message' : (imageUrl ? '🖼️ Photo Message' : (isCallEvent ? '📞 Call Log' : ''))),
       createdAt: new Date().toISOString(),
       ...(voiceUrl && { voiceUrl, voiceDuration }),
+      ...(imageUrl && { imageUrl }),
       ...(isCallEvent && { isCallEvent, callType, callStatus, callDuration })
     };
 
@@ -225,6 +227,127 @@ async function startServer() {
     }
 
     res.status(201).json(newMessage);
+  });
+
+  // Edit private message
+  app.put('/api/messages/:id', authenticateUser, (req, res) => {
+    const currentUserId = res.locals.userId;
+    const msgId = req.params.id;
+    const { content, imageUrl, voiceUrl, voiceDuration } = req.body;
+
+    const messages = db.getMessages();
+    const msg = messages.find(m => m.id === msgId);
+
+    if (!msg) {
+      return res.status(404).json({ error: 'Message not found.' });
+    }
+
+    if (msg.senderId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only edit messages you sent.' });
+    }
+
+    if (msg.isCallEvent) {
+      return res.status(400).json({ error: 'Cannot edit call logs.' });
+    }
+
+    if (msg.voiceUrl) {
+      return res.status(400).json({ error: 'Cannot edit voice messages.' });
+    }
+
+    if (content !== undefined) msg.content = content.trim();
+    if (imageUrl !== undefined) msg.imageUrl = imageUrl;
+    if (voiceUrl !== undefined) {
+      msg.voiceUrl = voiceUrl;
+      msg.voiceDuration = voiceDuration;
+    }
+    msg.isEdited = true;
+
+    db.updateMessage(msg);
+
+    // Notify real-time receiver and sender via WS if live
+    const broadcastAction = {
+      type: 'message_action',
+      action: 'edit',
+      messageId: msgId,
+      message: msg
+    };
+
+    if (typeof (app as any).broadcastMsgActionRealtime === 'function') {
+      (app as any).broadcastMsgActionRealtime(msg.senderId, msg.receiverId, broadcastAction);
+    }
+
+    res.json(msg);
+  });
+
+  // Mark all conversation messages from a target sender as seen
+  app.put('/api/messages/:targetUserId/seen', authenticateUser, (req, res) => {
+    const currentUserId = res.locals.userId;
+    const targetUserId = req.params.targetUserId;
+    const seenAt = new Date().toISOString();
+
+    const messages = db.getMessages();
+    let updatedCount = 0;
+
+    messages.forEach(m => {
+      if (m.senderId === targetUserId && m.receiverId === currentUserId && !m.seenAt) {
+        m.seenAt = seenAt;
+        db.updateMessage(m);
+        updatedCount++;
+      }
+    });
+
+    if (updatedCount > 0) {
+      // Notify targetUserId that currentUserId has seen the message(s)
+      const broadcastAction = {
+        type: 'message_action',
+        action: 'seen',
+        viewerId: currentUserId,
+        seenAt
+      };
+
+      if (typeof (app as any).broadcastMsgActionRealtime === 'function') {
+        (app as any).broadcastMsgActionRealtime(currentUserId, targetUserId, broadcastAction);
+      }
+    }
+
+    res.json({ success: true, updatedCount, seenAt });
+  });
+
+  // Delete private message
+  app.delete('/api/messages/:id', authenticateUser, (req, res) => {
+    const currentUserId = res.locals.userId;
+    const msgId = req.params.id;
+
+    const messages = db.getMessages();
+    const msg = messages.find(m => m.id === msgId);
+
+    if (!msg) {
+      return res.status(404).json({ error: 'Message not found.' });
+    }
+
+    if (msg.senderId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only delete messages you sent.' });
+    }
+
+    const wasDeleted = db.deleteMessage(msgId);
+    if (!wasDeleted) {
+      return res.status(500).json({ error: 'Failed to delete message.' });
+    }
+
+    // Notify real-time receiver and sender via WS if live
+    const broadcastAction = {
+      type: 'message_action',
+      action: 'delete',
+      messageId: msgId,
+      senderId: msg.senderId,
+      receiverId: msg.receiverId
+    };
+
+    if (typeof (app as any).broadcastMsgActionRealtime === 'function') {
+      (app as any).broadcastMsgActionRealtime(msg.senderId, msg.receiverId, broadcastAction);
+    }
+
+    res.json({ success: true, messageId: msgId });
   });
 
 
@@ -793,6 +916,21 @@ async function startServer() {
     }
   };
 
+  // Global helper on app for broadcasting message edit or delete actions in real-time
+  (app as any).broadcastMsgActionRealtime = (senderId: string, receiverId: string, actionPayload: any) => {
+    const rawData = JSON.stringify(actionPayload);
+    
+    const senderSocket = wsClients.get(senderId);
+    if (senderSocket && senderSocket.readyState === WebSocket.OPEN) {
+      senderSocket.send(rawData);
+    }
+    
+    const receiverSocket = wsClients.get(receiverId);
+    if (receiverSocket && receiverSocket.readyState === WebSocket.OPEN) {
+      receiverSocket.send(rawData);
+    }
+  };
+
   // Global helper on app for broadcasting status updates
   (app as any).broadcastStatusUpdate = (userId: string, statusMode: 'active' | 'offline' | 'dnd') => {
     const payload = JSON.stringify({
@@ -844,15 +982,18 @@ async function startServer() {
 
         if (payload.type === 'message') {
           if (!authUserId) return;
-          const { receiverId, content } = payload;
-          if (!receiverId || !content || !content.trim()) return;
+          const { receiverId, content, imageUrl, voiceUrl, voiceDuration } = payload;
+          if (!receiverId) return;
+          if (!content && !voiceUrl && !imageUrl) return;
 
           const newMessage: Message = {
             id: `msg_${Date.now()}`,
             senderId: authUserId,
             receiverId,
-            content: content.trim(),
-            createdAt: new Date().toISOString()
+            content: content ? content.trim() : (voiceUrl ? '🎤 Voice Message' : (imageUrl ? '🖼️ Photo Message' : '')),
+            createdAt: new Date().toISOString(),
+            ...(voiceUrl && { voiceUrl, voiceDuration }),
+            ...(imageUrl && { imageUrl })
           };
 
           db.saveMessage(newMessage);

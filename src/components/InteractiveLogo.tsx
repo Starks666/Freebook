@@ -7,11 +7,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, Sun, CloudRain, Snowflake, Wind, Zap, Heart, Clover, 
-  Leaf, Trees, Cloud, HelpCircle, ChevronDown, Check, Globe
+  Leaf, Trees, Cloud, HelpCircle, Calendar, MapPin, Eye, Info, X
 } from 'lucide-react';
 
-// Define the available events & weather states
-export type SeasonalEvent = 'default' | 'newyear' | 'valentines' | 'stpatricks' | 'earthday' | 'pride' | 'halloween' | 'thanksgiving' | 'christmas';
+// Define available seasonal events & weather states
+export type SeasonalEvent = 'default' | 'newyear' | 'valentines' | 'stpatricks' | 'earthday' | 'halloween' | 'thanksgiving' | 'christmas';
 export type WeatherState = 'sunny' | 'rainy' | 'snowy' | 'windy' | 'thunderstorm' | 'rainbow' | 'clouds';
 
 interface InteractiveLogoProps {
@@ -19,7 +19,7 @@ interface InteractiveLogoProps {
 }
 
 export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
-  // Determine default date-based seasonal event
+  // Determine date-based seasonal events automatically
   const getAutoEvent = (): SeasonalEvent => {
     const today = new Date();
     const month = today.getMonth(); // 0-indexed: Jan is 0, Dec is 11
@@ -29,49 +29,39 @@ export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
     if (month === 1 && date >= 7 && date <= 16) return 'valentines';
     if (month === 2 && date >= 12 && date <= 20) return 'stpatricks';
     if (month === 3 && date >= 16 && date <= 25) return 'earthday';
-    if (month === 5) return 'pride'; // June Pride
     if (month === 9 && date >= 20 && date <= 31) return 'halloween';
     if (month === 10 && date >= 20 && date <= 30) return 'thanksgiving';
     if (month === 11) return 'christmas'; // All of December
     
-    // Default season mapping
+    // Default fallback seasons
     if (month >= 11 || month <= 1) return 'christmas'; // Winter default
     if (month >= 2 && month <= 4) return 'earthday'; // Spring default
-    if (month >= 5 && month <= 7) return 'pride'; // Summer default
     return 'thanksgiving'; // Autumn default
   };
 
+  // Determine weather based on calendar month
+  const getAutoWeather = (): WeatherState => {
+    const month = new Date().getMonth();
+    if (month === 11 || month <= 1) return 'snowy'; // Dec, Jan, Feb -> Snowy
+    if (month >= 2 && month <= 4) return 'rainbow'; // Mar, Apr, May -> Rainbow Spring rain
+    if (month >= 5 && month <= 7) return 'sunny'; // Jun, Jul, Aug -> Sunny
+    return 'windy'; // Autumn -> Windy
+  };
+
+  const currentEvent = getAutoEvent();
+  const currentWeather = getAutoWeather();
+
   // State
-  const [selectedEvent, setSelectedEvent] = useState<SeasonalEvent>('default');
-  const [selectedWeather, setSelectedWeather] = useState<WeatherState>('sunny');
-  const [isAuto, setIsAuto] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
-  
-  // Custom click ripple count or trigger for sparks
   const [clickCount, setClickCount] = useState(0);
 
-  const menuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto detect event on mount
-  useEffect(() => {
-    if (isAuto) {
-      const autoEv = getAutoEvent();
-      setSelectedEvent(autoEv);
-      
-      // Select weather appropriately mapping to season/month
-      const month = new Date().getMonth();
-      if (month === 11 || month <= 1) setSelectedWeather('snowy');
-      else if (month >= 2 && month <= 4) setSelectedWeather('rainbow');
-      else if (month >= 5 && month <= 7) setSelectedWeather('sunny');
-      else setSelectedWeather('windy');
-    }
-  }, [isAuto]);
-
-  // Click outside listener for the popover menu
+  // Click outside listener
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }
     }
@@ -83,84 +73,143 @@ export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
     };
   }, [isMenuOpen]);
 
-  // Get visual state overrides based on selections
-  const currentEvent = isAuto ? getAutoEvent() : selectedEvent;
-  const currentWeather = selectedWeather;
+  // Clean formatted date string
+  const getFormattedDate = () => {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
 
-  // Visual Theme Config for the text logo "freebook"
+  // Vibe Descriptions based on Active Events
+  const getEventDescription = () => {
+    switch (currentEvent) {
+      case 'newyear':
+        return "Happy New Year! 🎉 Celebrations are echoing across the globe. It is a fresh start for clean resolutions, bright connections, & exciting goals on Freebook!";
+      case 'valentines':
+        return "Happy Saint Valentine's Season! 💖 Freebook is celebrating love, friendship, & genuine connections. A lovely time of the year to send a warm note to your close friends.";
+      case 'stpatricks':
+        return "Season of Clovers! 🍀 May good luck and joyous moments follow your path today. Chat, discover, and search up your closest circles today!";
+      case 'earthday':
+        return "Happy Earth Day! 🌱 Spring has blossomed. Let's appreciate nature, plant beautiful habits, and nourish our global family tree.";
+      case 'halloween':
+        return "Spooky Halloween! 🎃 Autumn twilight is here. Keep a lookout for cute spiders, cozy pumpkins, and mystical shadows across the pages today.";
+      case 'thanksgiving':
+        return "Harvest Thanksgiving! 🦃 A heartwarming autumn season to count our blessings, appreciate the special connections we have in our lives, and enjoy sweet holiday vibes.";
+      case 'christmas':
+        return "Cozy Winter Holidays! 🎄 Twinkling Christmas lights and snow are filling the atmosphere. Cozy up with sweet cocoa, listen to carols, and check on family.";
+      default:
+        return "Today is a beautiful daily page! ✨ Every ordinary morning is a clean canvas to write something meaningful, reach out to old friends, and build forever bonds.";
+    }
+  };
+
+  // Weather-specific notes
+  const getWeatherDescription = () => {
+    switch (currentWeather) {
+      case 'sunny':
+        return "Sunny & bright! ☀️ Summer sunshine is illuminating the virtual dashboard. Perfect weather to post active updates or share outdoor memories.";
+      case 'rainy':
+        return "Cozy gentle rainfall is pouring. 🌧️ An exquisite day to stay dry, sip hot coffee, and listen to relaxing beats while chatting on Freebook.";
+      case 'snowy':
+        return "Magical snowflakes are swirling! ❄️ Cozy winter weather covers everything in pristine silence. Stay nice & warm indoors.";
+      case 'windy':
+        return "A breezy, sweeping autumn wind! 🍂 Crispy colorful leaves are dancing across the screen with gentle micro-shakes.";
+      case 'thunderstorm':
+        return "Stormy rumbles! ⚡ High excitement levels and dramatic flashes of lightning in the twilight horizon. Stay safe on our secure lines.";
+      case 'rainbow':
+        return "Peaceful spring morning with a rainbow! 🌈 A lovely reminder of hope and fresh starts following last night's rainfall.";
+      default:
+        return "Calm clouds cover. ☁️ Peaceful, tranquil skies and pleasant daylight perfect for stress-free networking.";
+    }
+  };
+
+  // Decorative logo badge and typography config
   const getLogoStyle = () => {
     switch (currentEvent) {
       case 'newyear':
         return {
           textClass: "bg-clip-text text-transparent bg-gradient-to-r from-amber-400 via-orange-500 to-yellow-300 font-extrabold drop-shadow-[0_2px_8px_rgba(245,158,11,0.3)]",
           badge: "🎉",
-          colorTheme: "text-amber-500"
+          colorTheme: "text-amber-500",
+          emoji: "✨",
+          title: "New Year Celebration"
         };
       case 'valentines':
         return {
           textClass: "bg-clip-text text-transparent bg-gradient-to-r from-pink-500 via-rose-500 to-red-500 font-extrabold drop-shadow-[0_2px_8px_rgba(244,63,94,0.3)]",
           badge: "💖",
-          colorTheme: "text-rose-500"
+          colorTheme: "text-rose-500",
+          emoji: "🌹",
+          title: "Valentine's Love"
         };
       case 'stpatricks':
         return {
           textClass: "bg-clip-text text-transparent bg-gradient-to-r from-emerald-500 via-green-600 to-teal-500 font-extrabold drop-shadow-[0_2px_8px_rgba(16,185,129,0.3)]",
           badge: "🍀",
-          colorTheme: "text-emerald-500"
+          colorTheme: "text-emerald-500",
+          emoji: "🍀",
+          title: "Luck of the Irish"
         };
       case 'earthday':
         return {
           textClass: "bg-clip-text text-transparent bg-gradient-to-r from-green-500 via-emerald-600 to-sky-500 font-extrabold drop-shadow-[0_2px_8px_rgba(16,185,129,0.2)]",
           badge: "🌱",
-          colorTheme: "text-green-500"
-        };
-      case 'pride':
-        return {
-          textClass: "bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-yellow-400 via-green-500 via-blue-500 to-purple-600 font-black animate-[gradient-shift_6s_ease_infinite] bg-[length:200%_auto] drop-shadow-[0_2px_6px_rgba(59,130,246,0.2)]",
-          badge: "🌈",
-          colorTheme: "text-purple-500"
+          colorTheme: "text-green-500",
+          emoji: "🌍",
+          title: "Earth & Spring Season"
         };
       case 'halloween':
         return {
           textClass: "bg-clip-text text-transparent bg-gradient-to-r from-orange-500 via-purple-600 to-amber-600 font-extrabold drop-shadow-[0_2px_8px_rgba(249,115,22,0.3)]",
           badge: "🎃",
-          colorTheme: "text-orange-500"
+          colorTheme: "text-orange-500",
+          emoji: "🦇",
+          title: "Spooky Autumn Halloween"
         };
       case 'thanksgiving':
         return {
           textClass: "bg-clip-text text-transparent bg-gradient-to-r from-amber-600 via-orange-600 to-yellow-600 font-extrabold drop-shadow-[0_2px_8px_rgba(217,119,6,0.3)]",
           badge: "🦃",
-          colorTheme: "text-orange-600"
+          colorTheme: "text-orange-600",
+          emoji: "🥧",
+          title: "Harvest Thanksgiving"
         };
       case 'christmas':
         return {
           textClass: "bg-clip-text text-transparent bg-gradient-to-r from-red-600 via-emerald-600 to-red-500 font-extrabold drop-shadow-[0_2px_8px_rgba(220,38,38,0.2)]",
           badge: "🎄",
-          colorTheme: "text-red-600"
+          colorTheme: "text-red-600",
+          emoji: "❄️",
+          title: "Winter Holidays Castle"
         };
       default:
         return {
           textClass: "text-blue-600 dark:text-blue-500 font-extrabold",
           badge: "✨",
-          colorTheme: "text-blue-500"
+          colorTheme: "text-blue-500",
+          emoji: "💫",
+          title: "Daily Spark Mode"
         };
     }
   };
 
   const logoStyle = getLogoStyle();
 
-  // Handle Logo click for fun animations or default actions
+  // Handle Logo click: triggers feed scroll & opens/toggles the details popup
   const handleLogoClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsMenuOpen(!isMenuOpen);
     setClickCount(prev => prev + 1);
     
-    // Call props click if any
+    // Call props to go to feed
     if (onClick) {
       onClick();
     }
   };
 
-  // Render weather background atmospheric assets around the logo
+  // Render weather background atmospheric visual indicators
   const renderWeatherEffects = () => {
     if (!hovered && clickCount === 0) return null;
 
@@ -251,9 +300,8 @@ export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
       valentines: Heart,
       stpatricks: Clover,
       earthday: Leaf,
-      pride: Sparkles, // Uses Sparkles with rainbow scale
-      halloween: HelpCircle, // Will represent spooky ghosts
-      thanksgiving: Trees, // Pine cones/trees
+      halloween: HelpCircle,
+      thanksgiving: Trees,
       christmas: Snowflake
     };
 
@@ -275,10 +323,8 @@ export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
               className={`absolute top-0 ${leftOffset} ${logoStyle.colorTheme}`}
             >
               {currentEvent === 'halloween' ? (
-                // Custom ghostly face
                 <span className="text-[10px] filter drop-shadow">👻</span>
               ) : currentEvent === 'thanksgiving' ? (
-                // Maple leaf or acorn emoji
                 <span className="text-[10px]">🍂</span>
               ) : currentEvent === 'valentines' ? (
                 <Heart className={`${size} fill-current`} />
@@ -296,15 +342,27 @@ export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
     );
   };
 
+  const weatherIconsMap = {
+    sunny: Sun,
+    rainy: CloudRain,
+    snowy: Snowflake,
+    windy: Wind,
+    thunderstorm: Zap,
+    rainbow: Sparkles,
+    clouds: Cloud
+  };
+  const ActiveWeatherIcon = weatherIconsMap[currentWeather] || Sun;
+
   return (
-    <div className="relative flex items-center gap-1.5" ref={menuRef}>
+    <div className="relative flex items-center gap-1" ref={containerRef}>
       {/* Interactive Main Logo Card */}
       <div 
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={handleLogoClick}
-        className="relative px-2.5 py-1 rounded-2xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 border border-transparent hover:border-gray-100 dark:hover:border-gray-800 transition-all duration-300 overflow-visible select-none flex items-center gap-1"
+        className="relative px-2.5 py-1 rounded-2xl cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 border border-transparent hover:border-gray-100 dark:hover:border-gray-800 transition-all duration-300 overflow-visible select-none flex items-center gap-1 active:scale-97"
         id="interactive-brand-logo-freebook"
+        title="Click to view today's atmosphere!"
       >
         {/* Dynamic Santa Hat overlay for Christmas */}
         {currentEvent === 'christmas' && (
@@ -314,7 +372,6 @@ export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
             transition={{ duration: 1.5, repeat: Infinity }}
             className="absolute -top-3.5 -left-1 z-30 select-none pointer-events-none transform -rotate-12"
           >
-            {/* Elegant SVG Santa Hat */}
             <svg width="22" height="18" viewBox="0 0 24 20" fill="none" className="filter drop-shadow-sm">
               <path d="M4 14C12 3 19 6 22 10C22 10 20 5 13 4C6 3 3 8 3 12Z" fill="#DC2626" />
               <path d="M2 12C2.5 12 18 12 19.5 12C20.5 12 21 13 21 14.5C21 16 19 16 18 16C15 16 6 16 3.5 16C1.5 16 1 15 1 14C1 13 1.5 12 2 12Z" fill="white" />
@@ -354,21 +411,7 @@ export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
         </motion.span>
       </div>
 
-      {/* Elegant Toggle Switch Widget next to logo to manage the year/weather simulation */}
-      <button
-        onClick={() => setIsMenuOpen(!isMenuOpen)}
-        className={`p-1 rounded-lg border text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 cursor-pointer transition ${
-          isMenuOpen 
-            ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200/50 dark:border-blue-900/40 text-blue-500' 
-            : 'bg-transparent border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
-        }`}
-        title="Simulate Seasonal Events & Weather mood!"
-        id="weather-mood-picker-trigger"
-      >
-        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${isMenuOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {/* Popover Simulator Dashboard */}
+      {/* Popover Bubble showing simple details of the day - completely non-interactive for themes */}
       <AnimatePresence>
         {isMenuOpen && (
           <motion.div
@@ -376,119 +419,61 @@ export default function InteractiveLogo({ onClick }: InteractiveLogoProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
             transition={{ duration: 0.18 }}
-            className="absolute left-0 top-11 w-64 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-xl z-50 p-4 space-y-3.5 select-none"
+            className="absolute left-0 top-11 w-72 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-xl z-50 p-4 space-y-3.5 select-none"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between pb-1.5 border-b border-gray-100 dark:border-gray-800">
+            {/* Header displaying Date */}
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-850">
               <span className="text-[10px] font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5" />
-                Theme Atmosphere
+                <Calendar className="w-3.5 h-3.5" />
+                Atmosphere of the Day
               </span>
-              <button
-                onClick={() => setIsAuto(!isAuto)}
-                className={`px-1.5 py-0.5 rounded text-[8px] font-black tracking-wide uppercase transition ${
-                  isAuto 
-                    ? 'bg-emerald-500 text-white' 
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200'
-                }`}
-                title="Automatically schedule events based on the calendar day!"
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMenuOpen(false);
+                }}
+                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-850 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer transition"
               >
-                {isAuto ? 'Auto Sched' : 'Manual'}
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* Weather Selection */}
-            <div className="space-y-1.5">
-              <span className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                Everyday Weather Simulation
-              </span>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(['sunny', 'rainy', 'snowy', 'windy', 'thunderstorm', 'rainbow', 'clouds'] as WeatherState[]).map((w) => {
-                  const isActive = currentWeather === w;
-                  const iconsMap = {
-                    sunny: Sun,
-                    rainy: CloudRain,
-                    snowy: Snowflake,
-                    windy: Wind,
-                    thunderstorm: Zap,
-                    rainbow: Sparkles,
-                    clouds: Cloud
-                  };
-                  const Icon = iconsMap[w] || Sun;
+            {/* Current Day Details */}
+            <div className="space-y-3">
+              {/* Day, Date & City/System representation */}
+              <div>
+                <p className="text-xs text-gray-400 dark:text-gray-500 font-mono">Current Date & Time</p>
+                <p className="text-sm font-black text-gray-800 dark:text-gray-100 mt-0.5">{getFormattedDate()}</p>
+              </div>
 
-                  return (
-                    <button
-                      key={w}
-                      type="button"
-                      onClick={() => setSelectedWeather(w)}
-                      className={`py-1.5 flex flex-col items-center justify-center gap-1 rounded-xl border transition cursor-pointer ${
-                        isActive
-                          ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900/50 text-blue-600 dark:text-blue-400'
-                          : 'bg-gray-50/50 dark:bg-gray-850/40 border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
-                      }`}
-                      title={w}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      <span className="text-[7.5px] font-bold capitalize truncate max-w-full px-0.5">{w}</span>
-                    </button>
-                  );
-                })}
+              {/* Event Badge Details */}
+              <div className="flex items-start gap-2.5 bg-blue-50/40 dark:bg-blue-955/10 p-2.5 rounded-xl border border-blue-100/50 dark:border-blue-900/30">
+                <span className="text-xl shrink-0">{logoStyle.emoji}</span>
+                <div>
+                  <h5 className="text-xs font-black text-blue-700 dark:text-blue-400">{logoStyle.title}</h5>
+                  <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed mt-1">
+                    {getEventDescription()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Weather info details */}
+              <div className="flex items-start gap-2.5 bg-gray-50 dark:bg-gray-900 p-2.5 rounded-xl border border-gray-200/50 dark:border-gray-800/600">
+                <div className="p-1.5 bg-white dark:bg-gray-850 rounded-lg text-emerald-500 shrink-0">
+                  <ActiveWeatherIcon className="w-4 h-4 text-emerald-500 fill-emerald-500/10" />
+                </div>
+                <div>
+                  <h5 className="text-xs font-black text-gray-700 dark:text-gray-200">Weather Atmosphere</h5>
+                  <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed mt-1">
+                    {getWeatherDescription()}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Seasonal Events selection (only visible/interactable if manual overdrive is on) */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center">
-                <span className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                  Seasonal Events of the Year
-                </span>
-                {isAuto && (
-                  <span className="text-[8px] text-emerald-500 font-mono italic">Controlled by calendar</span>
-                )}
-              </div>
-              
-              <div className="max-h-[140px] overflow-y-auto space-y-1 divide-y divide-gray-50 dark:divide-gray-850 pr-1 select-none">
-                {[
-                  { value: 'newyear', label: 'New Year Party', emoji: '🎉' },
-                  { value: 'valentines', label: "Valentine's Love", emoji: '💖' },
-                  { value: 'stpatricks', label: "St. Patrick's Clover", emoji: '🍀' },
-                  { value: 'earthday', label: 'Earth Day / Spring 🌱', emoji: '🌱' },
-                  { value: 'pride', label: 'Summer Pride / Rainbow', emoji: '🌈' },
-                  { value: 'halloween', label: 'Spooky Halloween 🎃', emoji: '🎃' },
-                  { value: 'thanksgiving', label: 'Harvest Thanksgiving', emoji: '🦃' },
-                  { value: 'christmas', label: 'Winter Holidays / Christmas', emoji: '🎄' }
-                ].map((item) => {
-                  const isActive = currentEvent === item.value;
-                  return (
-                    <button
-                      key={item.value}
-                      type="button"
-                      disabled={isAuto}
-                      onClick={() => {
-                        setSelectedEvent(item.value as SeasonalEvent);
-                      }}
-                      className={`w-full flex items-center justify-between text-left py-1.5 px-2 rounded-lg text-xs leading-none transition cursor-pointer ${
-                        isAuto ? 'opacity-65 cursor-not-allowed' : ''
-                      } ${
-                        isActive
-                          ? 'bg-blue-50/50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 font-extrabold'
-                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-850'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <span className="text-sm">{item.emoji}</span>
-                        <span>{item.label}</span>
-                      </span>
-                      {isActive && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Custom note */}
-            <div className="text-[9px] text-gray-400 dark:text-gray-500 font-mono text-center pt-2 border-t border-gray-100 dark:border-gray-800 leading-relaxed">
-              Hover/Click the logo to spark falling holiday particles & weather dynamics! 🍂❄️✨
+            {/* Footer */}
+            <div className="text-[9px] text-gray-400 dark:text-gray-500 font-mono text-center pt-2.5 border-t border-gray-100 dark:border-gray-850 leading-relaxed">
+              Theme updates automatically! Enjoy everyday sparks on Freebook 💖✨
             </div>
           </motion.div>
         )}

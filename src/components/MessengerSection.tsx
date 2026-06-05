@@ -7,7 +7,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, Search, Sparkles, Smile, Phone, Video, HelpCircle, Shield, Circle, User, Check, 
-  MessageSquare, AlertCircle, Volume2, VolumeX, Mic, MicOff, VideoOff, PhoneOff, Play, Pause, Trash2, PhoneCall 
+  MessageSquare, AlertCircle, Volume2, VolumeX, Mic, MicOff, VideoOff, PhoneOff, Play, Pause, Trash2, PhoneCall,
+  Image as ImageIcon 
 } from 'lucide-react';
 import { User as UserType, Message } from '../types';
 import AnimatedMedia from './AnimatedMedia';
@@ -133,6 +134,10 @@ export default function MessengerSection({
 }: MessengerSectionProps) {
   // Navigation & chat states
   const [activeUser, setActiveUser] = useState<UserType | null>(null);
+  const activeUserRef = useRef<UserType | null>(null);
+  useEffect(() => {
+    activeUserRef.current = activeUser;
+  }, [activeUser]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -140,12 +145,21 @@ export default function MessengerSection({
   const [isTyping, setIsTyping] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // Message editing and photo attachment states
+  const [isEditingMsgId, setIsEditingMsgId] = useState<string | null>(null);
+  const [editMsgContent, setEditMsgContent] = useState('');
+  const [editMsgImageUrl, setEditMsgImageUrl] = useState('');
+  const [editMsgVoiceUrl, setEditMsgVoiceUrl] = useState('');
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [showAttachmentInput, setShowAttachmentInput] = useState(false);
+
   // Audio Messaging state
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
+  const recordingDurationRef = useRef<number>(0);
 
   // Internet Calling State
   const [isCallActive, setIsCallActive] = useState(false);
@@ -462,7 +476,19 @@ export default function MessengerSection({
   const startVoiceRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      
+      let mimeTypeOpt = {};
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+          mimeTypeOpt = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeTypeOpt = { mimeType: 'audio/ogg' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeTypeOpt = { mimeType: 'audio/mp4' };
+        }
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, mimeTypeOpt);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -473,11 +499,11 @@ export default function MessengerSection({
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunksRef.current, mimeTypeOpt);
         const reader = new FileReader();
         reader.onloadend = async () => {
           const base64Url = reader.result as string;
-          await handleSendVoiceMessage(base64Url, recordingDuration);
+          await handleSendVoiceMessage(base64Url, recordingDurationRef.current || 1);
         };
         reader.readAsDataURL(audioBlob);
 
@@ -486,15 +512,161 @@ export default function MessengerSection({
 
       mediaRecorder.start();
       setIsRecording(true);
+      recordingDurationRef.current = 0;
       setRecordingDuration(0);
 
       recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
+        recordingDurationRef.current += 1;
+        setRecordingDuration(recordingDurationRef.current);
       }, 1000);
 
     } catch (err) {
       console.error('Error starting audio recording:', err);
-      alert('Microphone access is required for voice messages. Please check browser permissions.');
+      if (confirm('Microphone access is unavailable or denied in this preview workspace. Would you like to generate a beautiful, authentic AI Vocal Synthesized Voice note instead?')) {
+        generateSyntheticVoiceMessage();
+      }
+    }
+  };
+
+  const generateSyntheticVoiceMessage = async () => {
+    try {
+      setIsRecording(true);
+      recordingDurationRef.current = 0;
+      setRecordingDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        recordingDurationRef.current += 1;
+        setRecordingDuration(recordingDurationRef.current);
+      }, 1000);
+
+      const synthDuration = 3;
+      
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) {
+        throw new Error('Web Audio API is not supported');
+      }
+      const ctx = new AudioContextClass();
+      const dest = ctx.createMediaStreamDestination();
+      
+      let mimeTypeOpt = {};
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+          mimeTypeOpt = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeTypeOpt = { mimeType: 'audio/ogg' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeTypeOpt = { mimeType: 'audio/mp4' };
+        }
+      }
+
+      const mediaRecorder = new MediaRecorder(dest.stream, mimeTypeOpt);
+      const chunks: Blob[] = [];
+      
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+      
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(chunks, mimeTypeOpt);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Url = reader.result as string;
+          await handleSendVoiceMessage(base64Url, synthDuration);
+        };
+        reader.readAsDataURL(audioBlob);
+        ctx.close();
+      };
+      
+      mediaRecorder.start();
+      
+      const startTime = ctx.currentTime;
+      
+      // Perform formant vocal vowel synthesis (singing progression: Aa -> Oo -> Ii)
+      const playVowelChord = (freq: number, vowel: 'a' | 'o' | 'i', startOffset: number, dur: number) => {
+        const baseOsc = ctx.createOscillator();
+        baseOsc.type = 'sawtooth';
+        baseOsc.frequency.value = freq;
+        
+        const subOsc = ctx.createOscillator();
+        subOsc.type = 'triangle';
+        subOsc.frequency.value = freq * 0.5; // fundamental richness
+        
+        // Formant filters representing human resonators
+        const f1 = ctx.createBiquadFilter();
+        const f2 = ctx.createBiquadFilter();
+        const f3 = ctx.createBiquadFilter();
+        f1.type = 'bandpass';
+        f2.type = 'bandpass';
+        f3.type = 'bandpass';
+        
+        if (vowel === 'a') {
+          f1.frequency.value = 800; f1.Q.value = 10;
+          f2.frequency.value = 1150; f2.Q.value = 8;
+          f3.frequency.value = 2400; f3.Q.value = 5;
+        } else if (vowel === 'o') {
+          f1.frequency.value = 450; f1.Q.value = 12;
+          f2.frequency.value = 800; f2.Q.value = 10;
+          f3.frequency.value = 2200; f3.Q.value = 6;
+        } else { // 'i'
+          f1.frequency.value = 290; f1.Q.value = 15;
+          f2.frequency.value = 2250; f2.Q.value = 12;
+          f3.frequency.value = 3000; f3.Q.value = 8;
+        }
+        
+        const chordGain = ctx.createGain();
+        chordGain.gain.setValueAtTime(0, startTime + startOffset);
+        chordGain.gain.linearRampToValueAtTime(0.18, startTime + startOffset + 0.12);
+        chordGain.gain.setValueAtTime(0.18, startTime + startOffset + dur - 0.15);
+        chordGain.gain.linearRampToValueAtTime(0, startTime + startOffset + dur);
+        
+        // Singing vibrato
+        const vibrato = ctx.createOscillator();
+        vibrato.frequency.value = 6.2; // 6.2Hz vibrato
+        const vibratoAmplify = ctx.createGain();
+        vibratoAmplify.gain.value = freq * 0.045;
+        
+        vibrato.connect(vibratoAmplify);
+        vibratoAmplify.connect(baseOsc.frequency);
+        vibratoAmplify.connect(subOsc.frequency);
+        
+        baseOsc.connect(f1); baseOsc.connect(f2); baseOsc.connect(f3);
+        subOsc.connect(f1); subOsc.connect(f2); subOsc.connect(f3);
+        
+        f1.connect(chordGain); f2.connect(chordGain); f3.connect(chordGain);
+        chordGain.connect(dest);
+        
+        vibrato.start(startTime + startOffset);
+        baseOsc.start(startTime + startOffset);
+        subOsc.start(startTime + startOffset);
+        
+        vibrato.stop(startTime + startOffset + dur);
+        baseOsc.stop(startTime + startOffset + dur);
+        subOsc.stop(startTime + startOffset + dur);
+      };
+
+      // Play vocaloid: "Aah" (A major 220Hz), "Ooh" (C# minor 277.18Hz), "Iih" (E major 329.63Hz)
+      playVowelChord(220.00, 'a', 0.0, 0.9);
+      playVowelChord(277.18, 'o', 1.0, 0.9);
+      playVowelChord(329.63, 'i', 2.0, 1.0);
+
+      setTimeout(() => {
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+        mediaRecorder.stop();
+        setIsRecording(false);
+      }, synthDuration * 1000);
+
+    } catch (error) {
+      console.error('Fallback synthesis failed:', error);
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
     }
   };
 
@@ -596,6 +768,23 @@ export default function MessengerSection({
           setStatusPresence(prev => ({ ...prev, [userId]: statusMode }));
         }
 
+        // Real-time Message action (edit / delete / seen updates)
+        if (payload.type === 'message_action') {
+          const { action, messageId, message, viewerId, seenAt } = payload;
+          if (action === 'delete') {
+            setMessages(prev => prev.filter(m => m.id !== messageId));
+          } else if (action === 'edit' && message) {
+            setMessages(prev => prev.map(m => m.id === messageId ? message : m));
+          } else if (action === 'seen') {
+            setMessages(prev => prev.map(m => {
+              if (m.senderId === currentUser.id && m.receiverId === viewerId && !m.seenAt) {
+                return { ...m, seenAt };
+              }
+              return m;
+            }));
+          }
+        }
+
         // Full presence sync from server on mount
         if (payload.type === 'presence_sync') {
           const { statuses } = payload;
@@ -649,6 +838,39 @@ export default function MessengerSection({
     fetchTranscripts();
   }, [activeUser, token]);
 
+  // Mark active user's messages as seen
+  const markConversationAsSeen = async () => {
+    if (!activeUser || !token) return;
+    try {
+      const response = await fetch(`/api/messages/${activeUser.id}/seen`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setMessages(prev => prev.map(m => {
+          if (m.senderId === activeUser.id && m.receiverId === currentUser.id && !m.seenAt) {
+            return { ...m, seenAt: data.seenAt || new Date().toISOString() };
+          }
+          return m;
+        }));
+      }
+    } catch (e) {
+      console.error('Error marking conversation as seen:', e);
+    }
+  };
+
+  // Automatically mark incoming messages as seen when conversation is open
+  useEffect(() => {
+    if (!activeUser) return;
+    const hasUnread = messages.some(m => m.senderId === activeUser.id && !m.seenAt);
+    if (hasUnread) {
+      markConversationAsSeen();
+    }
+  }, [activeUser, messages, token]);
+
   // Handle pre-selected user injection
   useEffect(() => {
     if (preselectedUserId) {
@@ -669,20 +891,25 @@ export default function MessengerSection({
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Handle Send message trigger
+  // Handle Send message trigger with optional photo support
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!activeUser || !inputText.trim()) return;
+    if (!activeUser || (!inputText.trim() && !attachmentUrl.trim())) return;
 
-    const textPayload = inputText.trim();
+    const textPayload = inputText.trim() || undefined;
+    const photoPayload = attachmentUrl.trim() || undefined;
+
     setInputText('');
+    setAttachmentUrl('');
+    setShowAttachmentInput(false);
 
     // Attempt WebSocket transmission
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'message',
         receiverId: activeUser.id,
-        content: textPayload
+        content: textPayload,
+        imageUrl: photoPayload
       }));
     } else {
       // Fallback REST endpoint to guarantee reliability
@@ -695,7 +922,8 @@ export default function MessengerSection({
           },
           body: JSON.stringify({
             receiverId: activeUser.id,
-            content: textPayload
+            content: textPayload,
+            imageUrl: photoPayload
           })
         });
         if (response.ok) {
@@ -708,6 +936,59 @@ export default function MessengerSection({
       } catch (e) {
         console.error('Fallback send error:', e);
       }
+    }
+  };
+
+  // Editing and Deletion controls
+  const handleStartEdit = (message: Message) => {
+    setIsEditingMsgId(message.id);
+    setEditMsgContent(message.content || '');
+    setEditMsgImageUrl(message.imageUrl || '');
+    setEditMsgVoiceUrl(message.voiceUrl || '');
+  };
+
+  const handleSaveEdit = async (messageId: string) => {
+    try {
+      const response = await fetch(`/api/messages/${messageId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          content: editMsgContent,
+          imageUrl: editMsgImageUrl.trim() || undefined,
+          voiceUrl: editMsgVoiceUrl.trim() || undefined
+        })
+      });
+      if (response.ok) {
+        const updated = await response.json();
+        setMessages(prev => prev.map(m => m.id === messageId ? updated : m));
+        setIsEditingMsgId(null);
+      } else {
+        alert('Failed to save message changes.');
+      }
+    } catch (e) {
+      console.error('Error saving edited message:', e);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!confirm('Are you sure you want to delete this message? This action is permanent.')) return;
+    try {
+      const response = await fetch(`/api/messages/${messageId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        setMessages(prev => prev.filter(m => m.id !== messageId));
+      } else {
+        alert('Failed to delete message.');
+      }
+    } catch (e) {
+      console.error('Error deleting message:', e);
     }
   };
 
@@ -777,6 +1058,29 @@ export default function MessengerSection({
     }
   };
 
+  const getMessageDateHeader = (dateString: string): string => {
+    try {
+      const date = new Date(dateString);
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+
+      if (date.toDateString() === today.toDateString()) {
+        return 'Today';
+      } else if (date.toDateString() === yesterday.toDateString()) {
+        return 'Yesterday';
+      } else {
+        return date.toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric'
+        });
+      }
+    } catch (_) {
+      return '';
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden flex h-[620px] font-sans antialiased text-gray-800 dark:text-gray-100 mb-6 transition-all duration-300">
       
@@ -788,7 +1092,7 @@ export default function MessengerSection({
           <div className="flex items-center justify-between">
             <h2 className="font-extrabold text-xl tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
               <MessageSquare className="w-5.5 h-5.5 text-blue-500 fill-blue-500/15" />
-              Texter
+              Free Chat
             </h2>
             
             {/* Status sound toggler */}
@@ -1021,73 +1325,209 @@ export default function MessengerSection({
                   </div>
                 </div>
               ) : (
-                messages.map((message) => {
-                  const isMe = message.senderId === currentUser.id;
-                  
-                  if (message.isCallEvent) {
-                    const isVoice = message.callType === 'voice';
-                    const isCompleted = message.callStatus === 'completed';
-                    const isMissed = message.callStatus === 'missed';
-                    const isDeclined = message.callStatus === 'declined';
-                    
-                    return (
-                      <div 
-                        key={message.id}
-                        className="w-full flex justify-center my-2.5 select-none"
-                      >
-                        <div className="bg-gray-100 dark:bg-gray-850 border border-gray-200/50 dark:border-gray-800/60 rounded-full px-4 py-1.5 text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-2.5 shadow-2xs font-semibold">
-                          {isVoice ? (
-                            <Phone className={`w-3.5 h-3.5 ${isMissed ? 'text-rose-500' : 'text-emerald-500'}`} />
-                          ) : (
-                            <Video className={`w-3.5 h-3.5 ${isMissed ? 'text-rose-500' : 'text-emerald-500'}`} />
-                          )}
-                          <span>
-                            {isMe ? 'Outgoing' : 'Incoming'} {isVoice ? 'Voice Call' : 'Video Call'} -{' '}
-                            {isCompleted ? `Completed (${message.callDuration || '00:00'})` : isMissed ? 'Missed' : isDeclined ? 'Declined' : 'No Answer'}
-                          </span>
-                          <span className="text-[8px] font-mono opacity-60">
-                            {formatMessageTime(message.createdAt)}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  }
+                (() => {
+                  let lastDateHeader = '';
+                  return messages.map((message) => {
+                    const isMe = message.senderId === currentUser.id;
+                    const dateHeader = getMessageDateHeader(message.createdAt);
+                    const showDateHeader = dateHeader !== lastDateHeader;
+                    if (showDateHeader) {
+                      lastDateHeader = dateHeader;
+                    }
 
-                  return (
-                    <div 
-                      key={message.id} 
-                      className={`flex gap-2.5 items-end max-w-[85%] ${isMe ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}
-                    >
-                      {!isMe && (
-                        <AnimatedMedia
-                          src={activeUser.avatarUrl}
-                          alt="avatar"
-                          className="w-7.5 h-7.5 rounded-full object-cover shrink-0 border border-gray-100 dark:border-gray-800 inline-block mb-1"
-                          referrerPolicy="no-referrer"
-                        />
-                      )}
-                      <div className="space-y-1">
-                        <div 
-                          className={`p-3 rounded-2xl text-xs leading-relaxed shadow-3xs ${
-                            isMe 
-                              ? 'bg-blue-600 text-white rounded-br-none' 
-                              : 'bg-gray-100/90 dark:bg-gray-800/90 text-gray-800 dark:text-gray-200 rounded-bl-none'
-                          }`}
-                        >
-                          {message.voiceUrl ? (
-                            <VoiceMessageBubble voiceUrl={message.voiceUrl} duration={message.voiceDuration} />
-                          ) : (
-                            <p className="whitespace-pre-wrap">{message.content}</p>
+                    if (message.isCallEvent) {
+                      const isVoice = message.callType === 'voice';
+                      const isCompleted = message.callStatus === 'completed';
+                      const isMissed = message.callStatus === 'missed';
+                      const isDeclined = message.callStatus === 'declined';
+                      
+                      return (
+                        <React.Fragment key={message.id}>
+                          {showDateHeader && (
+                            <div className="w-full flex justify-center my-4.5 select-none animate-fadeIn">
+                              <div className="bg-gray-150/80 dark:bg-gray-800/80 text-[10px] text-gray-500 dark:text-gray-400 font-extrabold uppercase tracking-widest px-3.5 py-1 rounded-full shadow-3xs border border-gray-200/40 dark:border-gray-700/40">
+                                {dateHeader}
+                              </div>
+                            </div>
                           )}
+                          <div 
+                            className="w-full flex justify-center my-2.5 select-none"
+                          >
+                            <div className="bg-gray-100 dark:bg-gray-850 border border-gray-200/50 dark:border-gray-800/60 rounded-full px-4 py-1.5 text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-2.5 shadow-2xs font-semibold">
+                              {isVoice ? (
+                                <Phone className={`w-3.5 h-3.5 ${isMissed ? 'text-rose-500' : 'text-emerald-500'}`} />
+                              ) : (
+                                <Video className={`w-3.5 h-3.5 ${isMissed ? 'text-rose-500' : 'text-emerald-500'}`} />
+                              )}
+                              <span>
+                                {isMe ? 'Outgoing' : 'Incoming'} {isVoice ? 'Voice Call' : 'Video Call'} -{' '}
+                                {isCompleted ? `Completed (${message.callDuration || '00:00'})` : isMissed ? 'Missed' : isDeclined ? 'Declined' : 'No Answer'}
+                              </span>
+                              <span className="text-[8px] font-mono opacity-60">
+                                {formatMessageTime(message.createdAt)}
+                              </span>
+                            </div>
+                          </div>
+                        </React.Fragment>
+                      );
+                    }
+
+                    return (
+                      <React.Fragment key={message.id}>
+                        {showDateHeader && (
+                          <div className="w-full flex justify-center my-4.5 select-none animate-fadeIn">
+                            <div className="bg-gray-150/80 dark:bg-gray-800/80 text-[10px] text-gray-500 dark:text-gray-400 font-extrabold uppercase tracking-widest px-3.5 py-1 rounded-full shadow-3xs border border-gray-200/40 dark:border-gray-700/40">
+                              {dateHeader}
+                            </div>
+                          </div>
+                        )}
+                        <div 
+                          className={`flex gap-2.5 items-end max-w-[85%] group ${isMe ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}
+                        >
+                          {!isMe && (
+                            <AnimatedMedia
+                              src={activeUser.avatarUrl}
+                              alt="avatar"
+                              className="w-7.5 h-7.5 rounded-full object-cover shrink-0 border border-gray-100 dark:border-gray-800 inline-block mb-1"
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
+                          <div className="space-y-1">
+                            <div 
+                              className={`p-3 rounded-2xl text-xs leading-relaxed shadow-3xs ${
+                                isMe 
+                                  ? 'bg-blue-600 text-white rounded-br-none' 
+                                  : 'bg-gray-100/90 dark:bg-gray-800/90 text-gray-800 dark:text-gray-200 rounded-bl-none'
+                              }`}
+                            >
+                              {isEditingMsgId === message.id ? (
+                                <div className="space-y-2.5 p-1 min-w-[200px] text-gray-900 dark:text-white">
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] uppercase font-bold text-gray-400 block">Edit Text Message</label>
+                                    <textarea
+                                      value={editMsgContent}
+                                      onChange={(e) => setEditMsgContent(e.target.value)}
+                                      className="w-full text-xs p-2 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      rows={2}
+                                    />
+                                  </div>
+                                  
+                                  {(message.imageUrl || editMsgImageUrl) && (
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] uppercase font-bold text-gray-400 block">Photo URL Link</label>
+                                      <input
+                                        type="text"
+                                        value={editMsgImageUrl}
+                                        onChange={(e) => setEditMsgImageUrl(e.target.value)}
+                                        placeholder="Paste photo Unsplash URL..."
+                                        className="w-full text-[10px] px-2 py-1.5 rounded bg-white dark:bg-gray-700 text-gray-950 dark:text-gray-100 border border-gray-200 dark:border-gray-600 focus:outline-none"
+                                      />
+                                    </div>
+                                  )}
+
+                                  {(message.voiceUrl || editMsgVoiceUrl) && (
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] uppercase font-bold text-gray-400 block">Voice Note URL</label>
+                                      <input
+                                        type="text"
+                                        value={editMsgVoiceUrl}
+                                        onChange={(e) => setEditMsgVoiceUrl(e.target.value)}
+                                        placeholder="Paste voice note URL..."
+                                        className="w-full text-[10px] px-2 py-1.5 rounded bg-white dark:bg-gray-700 text-gray-950 dark:text-gray-100 border border-gray-200 dark:border-gray-605 focus:outline-none"
+                                      />
+                                    </div>
+                                  )}
+
+                                  <div className="flex justify-end gap-1.5 text-[10px]">
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsEditingMsgId(null)}
+                                      className="px-2.5 py-1 rounded bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 dark:hover:bg-gray-750 font-bold cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEdit(message.id)}
+                                      className="px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 font-bold cursor-pointer"
+                                    >
+                                      Save Change
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  {message.imageUrl && (
+                                    <div className="mb-2 max-w-[220px] rounded-xl overflow-hidden shadow-sm border border-gray-200/50 dark:border-gray-800">
+                                      <img 
+                                        src={message.imageUrl} 
+                                        alt="Message attached media" 
+                                        className="w-full max-h-48 object-cover rounded-xl" 
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    </div>
+                                  )}
+                                  {message.voiceUrl ? (
+                                    <VoiceMessageBubble voiceUrl={message.voiceUrl} duration={message.voiceDuration} />
+                                  ) : (
+                                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center flex-wrap gap-2 pr-1">
+                              <p className={`text-[9px] font-mono select-none ${isMe ? 'text-right text-gray-404 ml-auto' : 'text-left text-gray-450'}`}>
+                                {formatMessageTime(message.createdAt)}
+                                {message.isEdited && <span className="ml-1 text-gray-400 dark:text-gray-550 italic">(edited)</span>}
+                                {isMe && <span className="ml-1 text-blue-500 dark:text-blue-400 font-extrabold font-mono">✓</span>}
+                              </p>
+                              
+                              {isMe && message.seenAt && (
+                                <div className="flex items-center gap-1 inline-flex select-none animate-fadeIn">
+                                  <img 
+                                    src={activeUser.avatarUrl} 
+                                    alt="Seen avatar" 
+                                    className="w-3.5 h-3.5 rounded-full object-cover border border-blue-200 dark:border-blue-800/80"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <span className="text-[8px] text-blue-500 dark:text-blue-400 font-bold font-mono tracking-tight">
+                                    Seen {formatMessageTime(message.seenAt)}
+                                  </span>
+                                </div>
+                              )}
+                              
+                              {isMe && !isEditingMsgId && (
+                                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none text-[9px] font-semibold text-gray-400">
+                                  {!message.voiceUrl && (
+                                    <>
+                                      <span className="text-gray-300 dark:text-gray-800">•</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEdit(message)}
+                                        className="hover:text-blue-500 cursor-pointer text-gray-400 hover:underline transition"
+                                      >
+                                        Edit
+                                      </button>
+                                    </>
+                                  )}
+                                  <span className="text-gray-300 dark:text-gray-800">•</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMessage(message.id)}
+                                    className="hover:text-rose-500 cursor-pointer text-rose-500/80 hover:underline transition"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <p className={`text-[9px] font-mono select-none ${isMe ? 'text-right text-gray-400' : 'text-left text-gray-450'}`}>
-                          {formatMessageTime(message.createdAt)}
-                          {isMe && <span className="ml-1 text-blue-500 dark:text-blue-400 font-extrabold font-mono">✓</span>}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })
+                      </React.Fragment>
+                    );
+                  });
+                })()
               )}
               <div ref={chatBottomRef} />
             </div>
@@ -1121,47 +1561,117 @@ export default function MessengerSection({
                 </div>
               </div>
             ) : (
-              <form 
-                onSubmit={handleSendMessage}
-                className="p-3 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex gap-2.5 items-center shrink-0 pr-4"
-              >
-                {/* Microphone recording handle */}
-                <button
-                  type="button"
-                  onClick={startVoiceRecording}
-                  className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-955/20 dark:text-blue-400 rounded-full cursor-pointer hover:scale-105 active:scale-95 transition shrink-0"
-                  title="Record direct voice message"
+              <div className="flex flex-col shrink-0">
+                {showAttachmentInput && (
+                  <div className="mx-4 mb-2 p-2 bg-gray-50 dark:bg-gray-850 rounded-xl border border-gray-150 dark:border-gray-805 flex items-center justify-between gap-2.5 animate-fadeIn">
+                    <div className="flex-grow flex items-center gap-2">
+                      <span className="text-blue-500 dark:text-blue-400 font-bold text-[10px] uppercase tracking-wide shrink-0">Photo:</span>
+                      <input
+                        type="url"
+                        value={attachmentUrl}
+                        onChange={(e) => setAttachmentUrl(e.target.value)}
+                        placeholder="Paste photo Unsplash URL..."
+                        className="flex-grow text-xs bg-white dark:bg-gray-800 px-2.5 py-1.5 rounded-lg border border-gray-250 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex gap-1 items-center shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const samples = [
+                            'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
+                            'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=800&q=80',
+                            'https://images.unsplash.com/photo-1472396961693-142e6e269027?auto=format&fit=crop&w=800&q=80',
+                            'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=800&q=80',
+                            'https://images.unsplash.com/photo-1426604966848-d7adac402bff?auto=format&fit=crop&w=800&q=80'
+                          ];
+                          setAttachmentUrl(samples[Math.floor(Math.random() * samples.length)]);
+                        }}
+                        className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 text-[10px] text-blue-600 dark:text-blue-400 rounded-lg font-bold cursor-pointer"
+                        title="Add random beautiful sample photo"
+                      >
+                        🎲 Rand Photo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttachmentUrl('');
+                          setShowAttachmentInput(false);
+                        }}
+                        className="p-1 px-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-250 cursor-pointer font-bold"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                <form 
+                  onSubmit={handleSendMessage}
+                  className="p-3 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex gap-2.5 items-center shrink-0 pr-4"
                 >
-                  <Mic className="w-4.5 h-4.5 text-blue-500 hover:text-blue-600 dark:text-blue-400" />
-                </button>
+                  {/* Photo attachments button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAttachmentInput(!showAttachmentInput)}
+                    className={`p-2 rounded-full cursor-pointer hover:scale-105 active:scale-95 transition shrink-0 ${
+                      showAttachmentInput
+                        ? 'bg-blue-100 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400'
+                        : 'text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-300'
+                    }`}
+                    title="Attach photo/image"
+                  >
+                    <ImageIcon className="w-4.5 h-4.5" />
+                  </button>
 
-                <div className="flex-grow flex items-center bg-gray-100 dark:bg-gray-850 rounded-full px-4 py-2 border border-transparent focus-within:bg-white dark:focus-within:bg-gray-900 focus-within:border-gray-200 dark:focus-within:border-gray-850 shadow-2xs focus-within:ring-1 focus-within:ring-blue-500 transition-all duration-250">
-                  <input
-                    type="text"
-                    placeholder={
-                      statusPresence[activeUser.id] === 'dnd'
-                        ? `Reply to ${activeUser.displayName}... (They are in Do Not Disturb)`
-                        : `Spark a message to ${activeUser.displayName}...`
-                    }
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    className="flex-grow text-xs focus:ring-0 focus:outline-none border-0 bg-transparent text-gray-950 dark:text-white"
-                  />
-                  
-                  {/* Visual sparkles indicator */}
-                  <span className="text-gray-400 dark:text-gray-500 shrink-0">
-                    <Smile className="w-4 h-4 hover:text-blue-500 transition cursor-help" />
-                  </span>
-                </div>
+                  {/* Microphone recording handle */}
+                  <button
+                    type="button"
+                    onClick={startVoiceRecording}
+                    className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-955/20 dark:text-blue-400 rounded-full cursor-pointer hover:scale-105 active:scale-95 transition shrink-0"
+                    title="Record direct voice message"
+                  >
+                    <Mic className="w-4.5 h-4.5 text-blue-500 hover:text-blue-600 dark:text-blue-400" />
+                  </button>
 
-                <button
-                  type="submit"
-                  disabled={!inputText.trim()}
-                  className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 disabled:hover:bg-blue-600 shrink-0 flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 cursor-pointer transition-all disabled:pointer-events-none"
-                >
-                  <Send className="w-4 h-4 text-white" />
-                </button>
-              </form>
+                  {/* AI Synthetic Voice button */}
+                  <button
+                    type="button"
+                    onClick={generateSyntheticVoiceMessage}
+                    className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-955/20 dark:text-indigo-400 rounded-full cursor-pointer hover:scale-105 active:scale-95 transition shrink-0"
+                    title="Synthesize 3s Vocal Voice Chord"
+                  >
+                    <Sparkles className="w-4.5 h-4.5 text-indigo-500 hover:text-indigo-600 dark:text-indigo-400" />
+                  </button>
+
+                  <div className="flex-grow flex items-center bg-gray-100 dark:bg-gray-850 rounded-full px-4 py-2 border border-transparent focus-within:bg-white dark:focus-within:bg-gray-900 focus-within:border-gray-200 dark:focus-within:border-gray-850 shadow-2xs focus-within:ring-1 focus-within:ring-blue-500 transition-all duration-250">
+                    <input
+                      type="text"
+                      placeholder={
+                        statusPresence[activeUser.id] === 'dnd'
+                          ? `Reply to ${activeUser.displayName}... (They are in Do Not Disturb)`
+                          : `Spark a message to ${activeUser.displayName}...`
+                      }
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      className="flex-grow text-xs focus:ring-0 focus:outline-none border-0 bg-transparent text-gray-950 dark:text-white"
+                    />
+                    
+                    {/* Visual sparkles indicator */}
+                    <span className="text-gray-400 dark:text-gray-500 shrink-0">
+                      <Smile className="w-4 h-4 hover:text-blue-500 transition cursor-help" />
+                    </span>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={!inputText.trim() && !attachmentUrl.trim()}
+                    className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 disabled:hover:bg-blue-600 shrink-0 flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 cursor-pointer transition-all disabled:pointer-events-none"
+                  >
+                    <Send className="w-4 h-4 text-white" />
+                  </button>
+                </form>
+              </div>
             )}
           </>
         ) : (
@@ -1170,7 +1680,7 @@ export default function MessengerSection({
               <MessageSquare className="w-8 h-8 text-gray-400" />
             </div>
             <div className="space-y-1.5 max-w-sm">
-              <h3 className="font-extrabold text-gray-900 dark:text-white">Active Texter Lounge</h3>
+              <h3 className="font-extrabold text-gray-900 dark:text-white">Active Free Chat Lounge</h3>
               <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
                 Connect deeply and live. Maintain active/DND statuses instantly, talk real-time under compliant socket nodes.
               </p>
@@ -1187,7 +1697,7 @@ export default function MessengerSection({
             {/* Header branding */}
             <div className="absolute top-4 left-4 flex items-center gap-1.5 opacity-60 text-[10px] font-mono tracking-wider font-extrabold text-blue-400">
               <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping" />
-              <span>TEXTER SECURE SYNC CALL</span>
+              <span>FREE CHAT SECURE SYNC CALL</span>
             </div>
 
             {/* Video Feed Window / Remote View */}

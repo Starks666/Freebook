@@ -258,6 +258,30 @@ class DatabaseManager {
     this.save(this.data);
   }
 
+  public updateMessage(message: Message): void {
+    if (!this.data.messages) {
+      this.data.messages = [];
+    }
+    const idx = this.data.messages.findIndex(m => m.id === message.id);
+    if (idx >= 0) {
+      this.data.messages[idx] = message;
+      this.save(this.data);
+    }
+  }
+
+  public deleteMessage(messageId: string): boolean {
+    if (!this.data.messages) {
+      this.data.messages = [];
+    }
+    const lenBefore = this.data.messages.length;
+    this.data.messages = this.data.messages.filter(m => m.id !== messageId);
+    if (this.data.messages.length !== lenBefore) {
+      this.save(this.data);
+      return true;
+    }
+    return false;
+  }
+
   public getNotifications(): AppNotification[] {
     if (!this.data.notifications) {
       this.data.notifications = [];
